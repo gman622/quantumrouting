@@ -1,0 +1,13 @@
+---
+@id: fetch-data
+@complexity: simple
+@agent: local
+---
+
+# Fetch Data
+
+Fetch the raw dataset from the API endpoint.
+
+## Steps
+1. {{api_call}} GET /api/data
+2. {{write_file}} Save to ./data/raw.json

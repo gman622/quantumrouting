@@ -1,0 +1,18 @@
+---
+@id: generate-report
+@complexity: complex
+@agent: cloud
+@depends:
+  - fetch-data
+  - analyze-data
+---
+
+# Generate Report
+
+Generate a comprehensive report from the analysis.
+
+## Steps
+1. {{read_file}} Load ./data/raw.json
+2. {{read_file}} Load ./data/analysis.json
+3. [[claude]] Generate markdown report with findings
+4. {{write_file}} Save to ./reports/report.md

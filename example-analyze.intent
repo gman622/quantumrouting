@@ -1,0 +1,16 @@
+---
+@id: analyze-data
+@complexity: moderate
+@agent: auto
+@depends:
+  - fetch-data
+---
+
+# Analyze Data
+
+Analyze the fetched dataset for patterns.
+
+## Steps
+1. {{read_file}} Load ./data/raw.json
+2. [[claude]] Identify patterns and anomalies
+3. {{write_file}} Save analysis to ./data/analysis.json
