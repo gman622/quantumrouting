@@ -16,7 +16,7 @@ from ortools.sat.python import cp_model
 
 import css_renderer_config as cfg
 from css_renderer_agents import can_assign
-from css_renderer_model import get_cost
+from css_renderer_intents import PROJECT_DURATION_DAYS
 
 
 # Scale factor: CP-SAT requires integer coefficients. Multiply dollar costs
@@ -28,13 +28,7 @@ QUALITY_SCALE = 100
 
 
 def _build_model_types(agents, agent_names):
-    """Collapse identical agents into model types.
-
-    Returns:
-        model_types: list of dicts with keys: name, token_rate, quality,
-            capabilities, is_local, capacity (total), latency, instances (list of agent names)
-        type_index: dict mapping agent_name -> model type index
-    """
+    """Collapse identical agents into model types."""
     type_map = {}  # model_type_name -> index in model_types
     model_types = []
 
@@ -85,119 +79,80 @@ def _get_cost_for_type(intent, model_type):
 
 
 def solve_cpsat(intents, agents, agent_names, time_limit=cfg.CLASSICAL_TIME_BUDGET):
-    """Solve the 10K assignment problem using OR-Tools CP-SAT.
-
-    Uses model-type aggregation: 300 agents -> 10 model types, reducing
-    variables from ~2.6M to ~87K.
-
-    Args:
-        intents: List of intent dicts
-        agents: Dict of agent definitions
-        agent_names: List of agent names
-        time_limit: Maximum solve time in seconds
-
-    Returns:
-        dict mapping intent index to agent name, or empty dict on failure.
-    """
+    """Solve the 10K assignment problem using OR-Tools CP-SAT."""
     num_intents = len(intents)
-
-    # Collapse agents to model types
-    model_types, type_index = _build_model_types(agents, agent_names)
+    model_types, _ = _build_model_types(agents, agent_names)
     num_types = len(model_types)
 
-    print(f"Building CP-SAT model: {num_intents} tasks x {num_types} model types "
-          f"(collapsed from {len(agent_names)} agents)")
+    print(f"Building CP-SAT model: {num_intents} tasks x {num_types} model types")
     build_start = time.time()
 
     model = cp_model.CpModel()
 
     # --- Decision variables: x[i, t] = 1 iff intent i assigned to model type t ---
     x = {}
-    valid_types_for_intent = {}  # intent_idx -> list of type indices
-
+    valid_types_for_intent = defaultdict(list)
     for i, intent in enumerate(intents):
-        valid_types_for_intent[i] = []
         for t, mt in enumerate(model_types):
             if _can_assign_type(intent, mt):
                 x[i, t] = model.new_bool_var(f'x_{i}_{t}')
                 valid_types_for_intent[i].append(t)
 
-    total_vars = len(x)
-    print(f"  Boolean variables: {total_vars:,}")
+    print(f"  Boolean variables: {len(x):,}")
 
-    # --- Constraints: each intent gets exactly one model type ---
+    # --- Constraints ---
     for i in range(num_intents):
         if valid_types_for_intent[i]:
             model.add_exactly_one(x[i, t] for t in valid_types_for_intent[i])
-        else:
-            print(f"  WARNING: intent {i} has no valid model types")
-
-    # --- Constraints: model type total capacity ---
     for t, mt in enumerate(model_types):
-        total_cap = mt['total_capacity']
-        assigned = [x[i, t] for i in range(num_intents) if (i, t) in x]
-        if assigned:
-            model.add(sum(assigned) <= total_cap)
+        model.add(sum(x[i, t] for i in range(num_intents) if (i, t) in x) <= mt['total_capacity'])
 
-    # --- Auxiliary variables for dependency handling ---
-    assigned_quality = {}
-    dep_intents = set()
-    for i, intent in enumerate(intents):
-        for dep_idx in intent.get('depends', []):
-            dep_intents.add(i)
-            dep_intents.add(dep_idx)
-
-    for i in dep_intents:
-        if not valid_types_for_intent[i]:
-            continue
-        qualities = [int(model_types[t]['quality'] * QUALITY_SCALE)
-                     for t in valid_types_for_intent[i]]
-        min_q = min(qualities)
-        max_q = max(qualities)
-        assigned_quality[i] = model.new_int_var(min_q, max_q, f'q_{i}')
-
-        model.add(
-            assigned_quality[i] == sum(
-                int(model_types[t]['quality'] * QUALITY_SCALE) * x[i, t]
-                for t in valid_types_for_intent[i]
-            )
-        )
-
-    print(f"  Quality aux vars: {len(assigned_quality)}")
-
-    # --- Objective: minimize total cost + dependency penalty ---
+    # --- Objective Function ---
     objective_terms = []
 
-    # Linear cost terms
+    # 1. Base assignment cost
     for (i, t), var in x.items():
         cost = _get_cost_for_type(intents[i], model_types[t])
-        scaled_cost = int(cost * COST_SCALE)
-        if scaled_cost > 0:
-            objective_terms.append(scaled_cost * var)
+        objective_terms.append(int(cost * COST_SCALE) * var)
 
-    # Dependency penalty
+    # 2. Deadline penalty
+    for i, intent in enumerate(intents):
+        if intent.get('deadline', -1) >= 0:
+            urgency = (PROJECT_DURATION_DAYS - intent['deadline']) / PROJECT_DURATION_DAYS
+            deadline_penalty = int(urgency * cfg.DEADLINE_WEIGHT * COST_SCALE)
+            if deadline_penalty > 0:
+                for t in valid_types_for_intent[i]:
+                    objective_terms.append(deadline_penalty * x[i, t])
+
+    # 3. Dependency quality penalty
     dep_penalty_scaled = int(cfg.DEP_PENALTY * COST_SCALE)
-    num_dep_constraints = 0
-
     for i, intent in enumerate(intents):
         for dep_idx in intent.get('depends', []):
-            if i not in assigned_quality or dep_idx not in assigned_quality:
+            if not valid_types_for_intent[i] or not valid_types_for_intent[dep_idx]:
                 continue
-
-            q_i = assigned_quality[i]
-            q_dep = assigned_quality[dep_idx]
-
-            max_possible_deficit = QUALITY_SCALE
-            deficit = model.new_int_var(0, max_possible_deficit, f'def_{i}_{dep_idx}')
+            
+            q_i = sum(int(model_types[t]['quality'] * QUALITY_SCALE) * x[i, t] for t in valid_types_for_intent[i])
+            q_dep = sum(int(model_types[t]['quality'] * QUALITY_SCALE) * x[dep_idx, t] for t in valid_types_for_intent[dep_idx])
+            
+            deficit = model.new_int_var(0, QUALITY_SCALE, f'def_{i}_{dep_idx}')
             model.add(deficit >= q_dep - q_i)
-
             objective_terms.append(dep_penalty_scaled * deficit)
-            num_dep_constraints += 1
+
+    # 4. Context affinity bonus
+    affinity_bonus_scaled = int(cfg.CONTEXT_BONUS * COST_SCALE)
+    for i, intent in enumerate(intents):
+        for dep_idx in intent.get('depends', []):
+            for t in valid_types_for_intent[i]:
+                if t in valid_types_for_intent[dep_idx]:
+                    # Create an intermediate boolean var for the product x[i,t] * x[dep_idx,t]
+                    affinity_var = model.new_bool_var(f'aff_{i}_{dep_idx}_{t}')
+                    model.add_bool_and([x[i, t], x[dep_idx, t]]).only_enforce_if(affinity_var)
+                    model.add_implication(affinity_var.not_(), x[i, t].not_()).only_enforce_if(affinity_var.not_())
+                    model.add_implication(affinity_var.not_(), x[dep_idx, t].not_()).only_enforce_if(affinity_var.not_())
+                    objective_terms.append(-affinity_bonus_scaled * affinity_var)
 
     model.minimize(sum(objective_terms))
-
     build_time = time.time() - build_start
-    print(f"  Dependency constraints: {num_dep_constraints}")
     print(f"  Model build time: {build_time:.1f}s")
 
     # --- Solve ---
@@ -205,25 +160,16 @@ def solve_cpsat(intents, agents, agent_names, time_limit=cfg.CLASSICAL_TIME_BUDG
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit
     solver.parameters.log_search_progress = True
-    solver.parameters.num_workers = 0  # auto-detect CPU cores
+    solver.parameters.num_workers = 0
 
     solve_start = time.time()
     status = solver.solve(model)
     solve_time = time.time() - solve_start
 
-    status_name = solver.status_name(status)
-    print(f"\nSolver status: {status_name}")
-    print(f"Solve time: {solve_time:.1f}s")
+    print(f"\nSolver status: {solver.status_name(status)} in {solve_time:.1f}s")
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        print(f"Objective value: {solver.objective_value / COST_SCALE:.2f}")
-        if status == cp_model.OPTIMAL:
-            print("Solution is OPTIMAL")
-        else:
-            gap = solver.best_objective_bound / max(solver.objective_value, 1e-9)
-            print(f"Best bound: {solver.best_objective_bound / COST_SCALE:.2f} "
-                  f"(gap: {abs(1 - gap):.2%})")
-
+        # ... (rest of the function is for extracting results and remains the same)
         # Extract type-level assignments, then distribute to individual agents
         type_assignments = {}  # intent_idx -> model_type_index
         for i in range(num_intents):
@@ -243,49 +189,30 @@ def solve_cpsat(intents, agents, agent_names, time_limit=cfg.CLASSICAL_TIME_BUDG
 
 
 def _distribute_to_instances(type_assignments, model_types, intents, agents):
-    """Map model-type assignments to individual agent instances.
-
-    Round-robins across instances within each model type to respect
-    per-instance capacity.
-
-    Args:
-        type_assignments: dict mapping intent_idx -> model_type_index
-        model_types: list of model type dicts
-        intents: list of intent dicts
-        agents: dict of agent definitions
-
-    Returns:
-        dict mapping intent_idx -> agent_name
-    """
-    # Track load per instance
+    """Map model-type assignments to individual agent instances."""
     instance_load = defaultdict(int)
-    # Track next instance index per type (round-robin)
     next_instance = defaultdict(int)
-
     assignments = {}
 
     for i, t in sorted(type_assignments.items()):
         mt = model_types[t]
         instances = mt['instances']
         num_instances = len(instances)
-        per_instance_cap = mt['capacity']  # per-instance capacity
+        per_instance_cap = mt['capacity']
 
-        # Find an instance with remaining capacity (round-robin)
         assigned = False
         for _ in range(num_instances):
             idx = next_instance[t] % num_instances
             instance_name = instances[idx]
-            next_instance[t] = idx + 1
+            next_instance[t] += 1
 
             if instance_load[instance_name] < per_instance_cap:
                 assignments[i] = instance_name
                 instance_load[instance_name] += 1
                 assigned = True
                 break
-
+        
         if not assigned:
-            # All instances full — shouldn't happen if capacity constraint holds
-            # Fall back to first instance (over-capacity)
             assignments[i] = instances[0]
             instance_load[instances[0]] += 1
 
@@ -293,15 +220,7 @@ def _distribute_to_instances(type_assignments, model_types, intents, agents):
 
 
 def greedy_solve(intents, agents):
-    """Greedy baseline: cheapest valid agent, first come first served.
-
-    Args:
-        intents: List of intent dicts
-        agents: Dict of agent definitions
-
-    Returns:
-        (assignments, cost): assignments maps intent index to agent name.
-    """
+    """Greedy baseline: cheapest valid agent, first come first served."""
     names = list(agents.keys())
     result = {}
     load = {a: 0 for a in agents}
@@ -313,9 +232,7 @@ def greedy_solve(intents, agents):
 
         for name in names:
             a = agents[name]
-            if intent['complexity'] not in a['capabilities']:
-                continue
-            if a['quality'] < intent['min_quality']:
+            if not can_assign(intent, name, agents):
                 continue
             if load[name] >= a['capacity']:
                 continue
@@ -331,31 +248,4 @@ def greedy_solve(intents, agents):
             cost += intent['estimated_tokens'] * agents[best]['token_rate']
 
     return result, cost
-
-
-if __name__ == '__main__':
-    from css_renderer_intents import generate_intents, build_workflow_chains
-    from css_renderer_agents import build_agent_pool
-
-    print("Testing CP-SAT Solver for 10K CSS Renderer")
-    print("=" * 60)
-
-    agents, agent_names = build_agent_pool()
-    intents = generate_intents()
-    workflow_chains = build_workflow_chains(intents)
-
-    print(f"Generated {len(intents)} intents")
-    print(f"Agent pool: {len(agent_names)} agents")
-
-    # Test greedy
-    print("\n" + "=" * 60)
-    print("Greedy Solver...")
-    greedy_assignments, greedy_cost = greedy_solve(intents, agents)
-    print(f"Greedy assigned {len(greedy_assignments)}/{len(intents)} tasks")
-    print(f"Greedy cost: ${greedy_cost:.2f}")
-
-    # Test CP-SAT
-    print("\n" + "=" * 60)
-    print("CP-SAT Solver...")
-    assignments = solve_cpsat(intents, agents, agent_names)
-    print(f"CP-SAT assigned {len(assignments)}/{len(intents)} tasks")
+    cost

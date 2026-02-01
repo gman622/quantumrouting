@@ -1,28 +1,26 @@
 """Agent pool definition and capability filtering for 10K CSS Renderer."""
 
+import css_renderer_config as cfg
+
 # Cloud model definitions - 240 agents total
 CLOUD_MODELS = [
     {
         'name': 'claude',
-        'token_rate': 0.000020,   # $20/M tokens — enterprise negotiated
         'quality': 0.95,
         'capabilities': {'trivial', 'simple', 'moderate', 'complex', 'very-complex', 'epic', 'long-context'},
     },
     {
         'name': 'gpt5.2',
-        'token_rate': 0.000030,   # $30/M tokens
         'quality': 0.92,
         'capabilities': {'trivial', 'simple', 'moderate', 'complex', 'very-complex', 'long-context'},
     },
     {
         'name': 'gemini',
-        'token_rate': 0.000005,   # $5/M tokens
         'quality': 0.88,
         'capabilities': {'trivial', 'simple', 'moderate', 'complex', 'long-context'},
     },
     {
         'name': 'kimi2.5',
-        'token_rate': 0.000002,   # $2/M tokens
         'quality': 0.85,
         'capabilities': {'trivial', 'simple', 'moderate', 'complex', 'long-context'},
     },
@@ -60,7 +58,7 @@ def build_agent_pool():
     for model in CLOUD_MODELS:
         for i in range(CLOUD_SESSIONS):
             agents[f"{model['name']}-{i}"] = {
-                'token_rate': model['token_rate'],
+                'token_rate': cfg.TOKEN_RATES.get(model['name'], 0.0),
                 'quality': model['quality'],
                 'capabilities': model['capabilities'],
                 'is_local': False,

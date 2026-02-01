@@ -1,5 +1,6 @@
 """Intent generation and workflow dependency chains for QAAS."""
 
+import datetime
 import config as cfg
 
 INTENT_TEMPLATES = {
@@ -63,13 +64,20 @@ DISTRIBUTION = [
     ('epic',           30, 0.95),
 ]
 
+# --- Project Timeline ---
+# Based on the goal to replace browsers/IDEs by the end of 2027.
+PROJECT_START_DATE = datetime.date(2025, 1, 1)
+PROJECT_END_DATE = datetime.date(2027, 12, 31)
+PROJECT_DURATION_DAYS = (PROJECT_END_DATE - PROJECT_START_DATE).days
+# Time buffer (in days) for each step in a dependency chain.
+TIME_PER_STEP = {
+    'trivial': 3, 'simple': 7, 'moderate': 14, 'complex': 21,
+    'very-complex': 30, 'epic': 60,
+}
+
 
 def generate_intents():
-    """Generate the full list of intents from templates and distribution.
-
-    Returns:
-        list of intent dicts with keys: id, complexity, min_quality, depends.
-    """
+    """Generate the full list of intents from templates and distribution."""
     intents = []
     intent_id = 0
 
@@ -82,6 +90,7 @@ def generate_intents():
                 'complexity': complexity,
                 'min_quality': min_quality,
                 'depends': [],
+                'deadline': -1,  # Placeholder, will be set in build_workflow_chains
                 'estimated_tokens': cfg.TOKEN_ESTIMATES[complexity],
                 'story_points': cfg.STORY_POINTS[complexity],
             })
@@ -93,7 +102,7 @@ def generate_intents():
 def build_workflow_chains(intents):
     """Create dependency chains between intents to model workflows.
 
-    Mutates the intents list in-place (sets 'depends' fields).
+    Mutates the intents list in-place (sets 'depends' and 'deadline' fields).
 
     Returns:
         workflow_chains: list of (chain_type, step_indices) tuples.
@@ -147,4 +156,36 @@ def build_workflow_chains(intents):
             used_in_chains.update(steps)
             workflow_chains.append(('infra', steps))
 
+    # --- Assign Deadlines ---
+    # Deadline = days from project start (smaller is more urgent)
+    num_chains = len(workflow_chains)
+    chain_completion_days = [
+        int(PROJECT_DURATION_DAYS * (i + 1) / (num_chains + 1))
+        for i in range(num_chains)
+    ]
+
+    chained_indices = set()
+    for i, (chain_type, steps) in enumerate(workflow_chains):
+        intents[steps[-1]]['deadline'] = chain_completion_days[i]
+        chained_indices.add(steps[-1])
+
+        for j in range(len(steps) - 2, -1, -1):
+            next_task_complexity = intents[steps[j + 1]]['complexity']
+            buffer_days = TIME_PER_STEP.get(next_task_complexity, 14)
+            intents[steps[j]]['deadline'] = intents[steps[j + 1]]['deadline'] - buffer_days
+            chained_indices.add(steps[j])
+
+    independent_tasks = [
+        i for i, intent in enumerate(intents) if i not in chained_indices
+    ]
+    num_independent = len(independent_tasks)
+    for i, task_idx in enumerate(independent_tasks):
+        deadline = int(PROJECT_DURATION_DAYS * (i + 1) / (num_independent + 1))
+        intents[task_idx]['deadline'] = deadline
+
+    for intent in intents:
+        if intent['deadline'] < 0:
+            intent['deadline'] = 0
+
     return workflow_chains
+

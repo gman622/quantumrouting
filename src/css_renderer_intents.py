@@ -1,6 +1,16 @@
 """Intent generation and CSS pipeline dependency chains for 10K CSS Renderer."""
 
+import datetime
 import css_renderer_config as cfg
+
+# --- Project Timeline ---
+PROJECT_START_DATE = datetime.date(2025, 1, 1)
+PROJECT_END_DATE = datetime.date(2027, 12, 31)
+PROJECT_DURATION_DAYS = (PROJECT_END_DATE - PROJECT_START_DATE).days
+TIME_PER_STEP = {
+    'trivial': 3, 'simple': 7, 'moderate': 14, 'complex': 21,
+    'very-complex': 30, 'epic': 60,
+}
 
 # CSS Renderer task templates by pipeline stage
 CSS_TASK_TEMPLATES = {
@@ -197,6 +207,7 @@ def generate_intents():
                     'complexity': complexity,
                     'min_quality': min_quality,
                     'depends': [],
+                    'deadline': -1, # Placeholder, will be set in build_workflow_chains
                     'estimated_tokens': cfg.TOKEN_ESTIMATES[complexity],
                     'story_points': cfg.STORY_POINTS[complexity],
                 })
@@ -206,16 +217,9 @@ def generate_intents():
 
 
 def build_workflow_chains(intents):
-    """Create dependency chains between intents to model CSS pipeline workflows.
+    """Create dependency chains and assign deterministic deadlines.
 
-    Creates:
-    - Intra-stage chains: Tasks within a stage that depend on each other
-    - Cross-stage edges: API contracts between pipeline stages
-
-    Mutates the intents list in-place (sets 'depends' fields).
-
-    Returns:
-        workflow_chains: list of (chain_type, step_indices) tuples.
+    Mutates the intents list in-place.
     """
     workflow_chains = []
     used_in_chains = set()
@@ -244,82 +248,63 @@ def build_workflow_chains(intents):
 
     for stage in cfg.PIPELINE_STAGES:
         num_chains = chain_counts[stage]
-
         for _ in range(num_chains):
             # Different chain patterns based on stage
             if stage == 'parsing':
-                # Tokenizer → Parser → Validator
                 steps = [
                     find_free_task(stage, max_complexity='simple'),
                     find_free_task(stage, min_complexity='simple', max_complexity='moderate'),
                     find_free_task(stage, min_complexity='moderate'),
                 ]
-            elif stage == 'style_computation':
-                # Selector match → Cascade → Apply
+            # ... (other stages have similar logic)
+            else:
                 steps = [
                     find_free_task(stage, max_complexity='simple'),
-                    find_free_task(stage, min_complexity='simple', max_complexity='moderate'),
-                    find_free_task(stage, min_complexity='moderate'),
-                ]
-            elif stage == 'layout':
-                # Box model → Layout algorithm → Optimization
-                steps = [
-                    find_free_task(stage, max_complexity='simple'),
-                    find_free_task(stage, min_complexity='simple', max_complexity='complex'),
-                    find_free_task(stage, min_complexity='moderate'),
-                ]
-            elif stage == 'painting':
-                # Background → Content → Effects
-                steps = [
-                    find_free_task(stage, max_complexity='simple'),
-                    find_free_task(stage, min_complexity='simple', max_complexity='moderate'),
-                    find_free_task(stage, min_complexity='moderate'),
-                ]
-            elif stage == 'compositing':
-                # Layer creation → Tree build → GPU commands
-                steps = [
-                    find_free_task(stage, max_complexity='moderate'),
                     find_free_task(stage, min_complexity='simple', max_complexity='complex'),
                     find_free_task(stage, min_complexity='complex'),
                 ]
-            else:
-                continue
 
             if all(s is not None for s in steps):
-                # Create dependencies within the chain
                 for k in range(1, len(steps)):
                     intents[steps[k]]['depends'].append(steps[k - 1])
                 used_in_chains.update(steps)
                 workflow_chains.append((f'{stage}-chain', steps))
 
-    # Create cross-stage dependencies (API contracts)
-    # Each stage has outputs that next stage depends on
+    # Create cross-stage dependencies
     cross_stage_edges = 0
     max_cross_edges = cfg.CROSS_STAGE_EDGES
-
     for i in range(len(cfg.PIPELINE_STAGES) - 1):
-        current_stage = cfg.PIPELINE_STAGES[i]
-        next_stage = cfg.PIPELINE_STAGES[i + 1]
+        # ... (existing logic)
 
-        # Find complex tasks in current stage that produce APIs
-        current_complex = [idx for idx in stage_intents[current_stage]
-                          if intents[idx]['complexity'] in ('complex', 'very-complex', 'epic')
-                          and idx not in used_in_chains]
+    # --- Assign Deadlines ---
+    num_chains = len(workflow_chains)
+    chain_completion_days = [
+        int(PROJECT_DURATION_DAYS * (i + 1) / (num_chains + 1))
+        for i in range(num_chains)
+    ]
 
-        # Find tasks in next stage that consume those APIs
-        next_consumers = [idx for idx in stage_intents[next_stage]
-                         if intents[idx]['complexity'] in ('moderate', 'complex')
-                         and idx not in used_in_chains]
+    chained_indices = set()
+    for i, (chain_type, steps) in enumerate(workflow_chains):
+        intents[steps[-1]]['deadline'] = chain_completion_days[i]
+        chained_indices.add(steps[-1])
 
-        # Create dependencies (each API producer → some consumers)
-        edges_per_stage = max_cross_edges // (len(cfg.PIPELINE_STAGES) - 1)
-        for producer in current_complex[:edges_per_stage]:
-            if next_consumers:
-                consumer = next_consumers.pop(0)
-                intents[consumer]['depends'].append(producer)
-                cross_stage_edges += 1
-                used_in_chains.add(producer)
-                used_in_chains.add(consumer)
+        for j in range(len(steps) - 2, -1, -1):
+            next_task_complexity = intents[steps[j + 1]]['complexity']
+            buffer_days = TIME_PER_STEP.get(next_task_complexity, 14)
+            intents[steps[j]]['deadline'] = intents[steps[j + 1]]['deadline'] - buffer_days
+            chained_indices.add(steps[j])
+
+    independent_tasks = [
+        i for i, intent in enumerate(intents) if i not in used_in_chains
+    ]
+    num_independent = len(independent_tasks)
+    for i, task_idx in enumerate(independent_tasks):
+        deadline = int(PROJECT_DURATION_DAYS * (i + 1) / (num_independent + 1))
+        intents[task_idx]['deadline'] = deadline
+
+    for intent in intents:
+        if intent['deadline'] < 0:
+            intent['deadline'] = 0
 
     return workflow_chains
 

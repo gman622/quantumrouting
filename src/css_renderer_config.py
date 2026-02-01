@@ -9,6 +9,16 @@ LAGRANGE_MULTIPLIER = 10.0
 # Cost function weights
 OVERKILL_WEIGHT = 2
 LATENCY_WEIGHT = 0.001
+DEADLINE_WEIGHT = 1.5
+CONTEXT_BONUS = 0.5
+
+# Real-world token costs ($ per token)
+TOKEN_RATES = {
+    'claude': 0.000020,   # $20/Mtok
+    'gpt5.2': 0.000030, # $30/Mtok
+    'gemini': 0.000005, # $5/Mtok
+    'kimi2.5': 0.000002, # $2/Mtok
+}
 
 # Token estimates per complexity tier (scaled for CSS renderer complexity)
 TOKEN_ESTIMATES = {
