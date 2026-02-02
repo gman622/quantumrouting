@@ -2,11 +2,11 @@
 
 from collections import defaultdict
 
-from css_renderer_agents import (
+from .css_renderer_agents import (
     CLOUD_MODELS, LOCAL_MODELS, CLOUD_SESSIONS, CLOUD_CAPACITY, LOCAL_COUNT,
 )
-from css_renderer_intents import CSS_TASK_TEMPLATES
-import css_renderer_config as cfg
+from .css_renderer_intents import CSS_TASK_TEMPLATES
+from . import css_renderer_config as cfg
 
 
 def print_shift_report(assignments, intents, agents, workflow_chains):
@@ -141,7 +141,7 @@ def print_shift_report(assignments, intents, agents, workflow_chains):
             for i in range(CLOUD_SESSIONS)
             if f"{model['name']}-{i}" in agent_counts
         )
-        rate_per_m = model['token_rate'] * 1_000_000
+        rate_per_m = cfg.TOKEN_RATES.get(model['name'], 0) * 1_000_000
         print(f"  {model['name'] + f' (x{CLOUD_SESSIONS})':<20} {total:>8} "
               f"{CLOUD_SESSIONS * CLOUD_CAPACITY:>8} ${rate_per_m:>9.2f} {model['quality']:>8.2f}")
 
@@ -332,9 +332,9 @@ def print_pipeline_flow(assignments, intents, agents):
 
 if __name__ == '__main__':
     # Test reporting
-    from css_renderer_intents import generate_intents, build_workflow_chains
-    from css_renderer_agents import build_agent_pool
-    from solve_10k import greedy_solve
+    from quantum_routing.css_renderer_intents import generate_intents, build_workflow_chains
+    from quantum_routing.css_renderer_agents import build_agent_pool
+    from quantum_routing.solve_10k import greedy_solve
 
     print("Testing 10K Reporting")
     print("=" * 50)

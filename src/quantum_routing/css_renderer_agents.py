@@ -1,6 +1,6 @@
 """Agent pool definition and capability filtering for 10K CSS Renderer."""
 
-import css_renderer_config as cfg
+from . import css_renderer_config as cfg
 
 # Cloud model definitions - 240 agents total
 CLOUD_MODELS = [

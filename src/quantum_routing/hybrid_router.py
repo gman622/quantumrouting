@@ -23,8 +23,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import logging
 
 # Import existing solvers
-from solve_10k_ortools import solve_cpsat, greedy_solve as ortools_greedy
-from solve import solve_hybrid as dwave_solve_hybrid
+from .solve_10k_ortools import solve_cpsat, greedy_solve as ortools_greedy
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -514,11 +513,12 @@ class HybridRouter:
                            agent_names: List[str], start_time: float) -> RouteResult:
         """Solve using D-Wave Leap hybrid sampler."""
         # Build CQM
-        from css_renderer_model import build_cqm
-        from solve import solve_hybrid as dwave_solve
+        from .css_renderer_model import build_cqm
+        from dwave.system import LeapHybridCQMSampler
         
         cqm, x_vars = build_cqm(intents, agents, agent_names)
-        sampleset = dwave_solve(cqm)
+        sampler = LeapHybridCQMSampler()
+        sampleset = sampler.sample_cqm(cqm)
         
         # Extract assignments
         assignments = {}
@@ -606,8 +606,8 @@ def route_intents(intents: List[Dict], agents: Dict,
 
 if __name__ == '__main__':
     # Test the hybrid router
-    from css_renderer_agents import build_agent_pool
-    from css_renderer_intents import generate_intents, build_workflow_chains
+    from quantum_routing.css_renderer_agents import build_agent_pool
+    from quantum_routing.css_renderer_intents import generate_intents, build_workflow_chains
     
     print("Testing Hybrid Router for AI Intent Routing")
     print("=" * 60)

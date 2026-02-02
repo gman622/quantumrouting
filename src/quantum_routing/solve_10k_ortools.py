@@ -14,9 +14,9 @@ from collections import defaultdict
 
 from ortools.sat.python import cp_model
 
-import css_renderer_config as cfg
-from css_renderer_agents import can_assign
-from css_renderer_intents import PROJECT_DURATION_DAYS
+from . import css_renderer_config as cfg
+from .css_renderer_agents import can_assign
+from .css_renderer_intents import PROJECT_DURATION_DAYS
 
 
 # Scale factor: CP-SAT requires integer coefficients. Multiply dollar costs
@@ -144,11 +144,11 @@ def solve_cpsat(intents, agents, agent_names, time_limit=cfg.CLASSICAL_TIME_BUDG
         for dep_idx in intent.get('depends', []):
             for t in valid_types_for_intent[i]:
                 if t in valid_types_for_intent[dep_idx]:
-                    # Create an intermediate boolean var for the product x[i,t] * x[dep_idx,t]
+                    # affinity_var == 1 only when both i and dep_idx use type t
                     affinity_var = model.new_bool_var(f'aff_{i}_{dep_idx}_{t}')
-                    model.add_bool_and([x[i, t], x[dep_idx, t]]).only_enforce_if(affinity_var)
-                    model.add_implication(affinity_var.not_(), x[i, t].not_()).only_enforce_if(affinity_var.not_())
-                    model.add_implication(affinity_var.not_(), x[dep_idx, t].not_()).only_enforce_if(affinity_var.not_())
+                    model.add_implication(affinity_var, x[i, t])
+                    model.add_implication(affinity_var, x[dep_idx, t])
+                    model.add_bool_or([affinity_var, x[i, t].Not(), x[dep_idx, t].Not()])
                     objective_terms.append(-affinity_bonus_scaled * affinity_var)
 
     model.minimize(sum(objective_terms))

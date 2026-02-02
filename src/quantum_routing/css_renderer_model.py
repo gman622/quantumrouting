@@ -4,8 +4,8 @@ import time
 
 from dimod import ConstrainedQuadraticModel, Binary
 
-import css_renderer_config as cfg
-from css_renderer_agents import can_assign
+from . import css_renderer_config as cfg
+from .css_renderer_agents import can_assign
 
 
 def get_cost(intent, agent_name, agents):
@@ -234,8 +234,8 @@ def estimate_problem_size(intents, agents, agent_names):
 
 if __name__ == '__main__':
     # Test model building
-    from css_renderer_intents import generate_intents, build_workflow_chains
-    from css_renderer_agents import build_agent_pool
+    from quantum_routing.css_renderer_intents import generate_intents, build_workflow_chains
+    from quantum_routing.css_renderer_agents import build_agent_pool
 
     print("Testing CQM Model Builder")
     print("=" * 50)

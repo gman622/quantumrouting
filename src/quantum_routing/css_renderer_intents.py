@@ -1,7 +1,7 @@
 """Intent generation and CSS pipeline dependency chains for 10K CSS Renderer."""
 
 import datetime
-import css_renderer_config as cfg
+from . import css_renderer_config as cfg
 
 # --- Project Timeline ---
 PROJECT_START_DATE = datetime.date(2025, 1, 1)
@@ -274,7 +274,7 @@ def build_workflow_chains(intents):
     cross_stage_edges = 0
     max_cross_edges = cfg.CROSS_STAGE_EDGES
     for i in range(len(cfg.PIPELINE_STAGES) - 1):
-        # ... (existing logic)
+        pass  # cross-stage dependency logic placeholder
 
     # --- Assign Deadlines ---
     num_chains = len(workflow_chains)

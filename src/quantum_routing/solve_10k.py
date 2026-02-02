@@ -5,8 +5,8 @@ import time
 from dimod import cqm_to_bqm
 import neal
 
-import css_renderer_config as cfg
-from css_renderer_agents import can_assign
+from . import css_renderer_config as cfg
+from .css_renderer_agents import can_assign
 
 
 def solve_sa(cqm, time_limit=cfg.CLASSICAL_TIME_BUDGET):
@@ -183,7 +183,7 @@ def solve_with_fallback(intents, agents, agent_names, time_limit=cfg.CLASSICAL_T
     Returns:
         (assignments, method_used): assignments dict and method string
     """
-    from css_renderer_model import build_cqm, build_wave_cqms, estimate_problem_size
+    from .css_renderer_model import build_cqm, build_wave_cqms, estimate_problem_size
 
     # First, estimate problem size
     estimates = estimate_problem_size(intents, agents, agent_names)
@@ -211,8 +211,8 @@ def solve_with_fallback(intents, agents, agent_names, time_limit=cfg.CLASSICAL_T
 
 if __name__ == '__main__':
     # Test solvers
-    from css_renderer_intents import generate_intents, build_workflow_chains
-    from css_renderer_agents import build_agent_pool
+    from quantum_routing.css_renderer_intents import generate_intents, build_workflow_chains
+    from quantum_routing.css_renderer_agents import build_agent_pool
 
     print("Testing 10K Solvers")
     print("=" * 50)
