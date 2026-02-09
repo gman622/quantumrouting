@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from quantum_routing.css_renderer_agents import build_agent_pool, get_agent_stats
 from quantum_routing.css_renderer_intents import generate_intents, build_workflow_chains
 from quantum_routing.solve_10k_ortools import solve_cpsat
+from quantum_routing.telemetry import compute_metrics
 from quantum_routing.github_tickets import import_all_issues, decompose_ticket
 from quantum_routing.feature_decomposer import (
     decompose_realtime_collab_feature,
@@ -51,7 +52,8 @@ print(f'  {len(intents)} intents, {len(workflow_chains)} workflow chains')
 print('Running initial CP-SAT solve (time_limit=30s)...')
 t0 = time.time()
 assignments = solve_cpsat(intents, agents, agent_names, time_limit=30)
-print(f'  Solved in {time.time() - t0:.1f}s — {len(assignments)}/{len(intents)} assigned')
+solve_duration = time.time() - t0
+print(f'  Solved in {solve_duration:.1f}s — {len(assignments)}/{len(intents)} assigned')
 
 # Current state — updated on re-solve
 current_assignments = assignments
@@ -62,6 +64,19 @@ current_constraints = {
     'dep_penalty': 100.0,
     'context_bonus': 0.5,
 }
+
+# Telemetry — compute metrics from initial solve
+print('Computing telemetry metrics...')
+current_metrics = compute_metrics(
+    assignments, intents, agents, workflow_chains,
+    solver_duration_s=solve_duration,
+)
+cc = current_metrics['chain_coherence']
+cq = current_metrics['cost_quality']
+gp = current_metrics['gate_pass']
+print(f'  Chain coherence: {cc["score"]:.1%} ({cc["chains_single_model"]}/{cc["total_chains"]} single-model)')
+print(f'  Cost/quality: ${cq["total_cost"]:.2f} total, ratio {cq["cost_quality_ratio"]:.4f}')
+print(f'  Gate 1 pass: {gp["gate_1_pass_rate"]:.1%} ({gp["gate_1_passed"]}/{gp["gate_1_passed"] + gp["gate_1_failed"]})')
 
 # Solver worker
 solver = SolverWorker(intents, agents, agent_names, socketio)
@@ -136,6 +151,12 @@ def api_solve_status(job_id):
         'elapsed': round(job.elapsed, 1),
         'error': job.error,
     })
+
+
+@app.route('/api/metrics')
+def api_metrics():
+    """Return current telemetry metrics from the latest solver run."""
+    return jsonify(current_metrics)
 
 
 @app.route('/api/issues')
@@ -221,7 +242,7 @@ def handle_disconnect():
 @socketio.on('request_assignments')
 def handle_request_assignments():
     """Client requests current assignments after solver completes."""
-    global current_assignments
+    global current_assignments, current_metrics
     # Find the latest completed job and use its assignments
     latest = None
     for job in solver.jobs.values():
@@ -230,10 +251,21 @@ def handle_request_assignments():
                 latest = job
     if latest and latest.assignments:
         current_assignments = latest.assignments
+        # Recompute telemetry for the new assignments
+        current_metrics = compute_metrics(
+            current_assignments, intents, agents, workflow_chains,
+            weights={
+                'DEP_PENALTY': current_constraints['dep_penalty'],
+                'OVERKILL_WEIGHT': current_constraints['overkill_weight'],
+                'CONTEXT_BONUS': current_constraints['context_bonus'],
+            },
+            solver_duration_s=latest.elapsed,
+        )
 
     meta = get_assignments_metadata(current_assignments, intents, agents)
     meta['constraints'] = current_constraints
     socketio.emit('assignments_updated', meta)
+    socketio.emit('metrics_updated', current_metrics)
 
 
 # ── Serve React frontend ─────────────────────────────────────────────────
