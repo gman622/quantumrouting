@@ -162,11 +162,12 @@ def api_metrics():
 @app.route('/api/issues')
 def api_issues():
     """Fetch GitHub issues and their decomposed intents."""
+    repo = request.args.get('repo')  # Optional: "owner/repo" format
     issues_data = []
 
     # Try to fetch from GitHub
     try:
-        tickets = import_all_issues(state='open')
+        tickets = import_all_issues(state='open', repo=repo)
     except Exception as e:
         print(f'Warning: Could not fetch GitHub issues: {e}')
         tickets = []

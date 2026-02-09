@@ -145,6 +145,77 @@ export interface SolverCompleted {
   error: string | null
 }
 
+// ── Wave Diff Types ─────────────────────────────────────────────────────
+
+// Intent delta from a wave execution
+export interface IntentDelta {
+  intentId: string
+  title: string
+  status: 'success' | 'warning' | 'failed'
+  agent: string
+  agentModel: string
+  changes: FileChange[]
+  warnings: string[]
+  errors: string[]
+}
+
+// File change within an intent
+export interface FileChange {
+  filePath: string
+  changeType: 'created' | 'modified' | 'deleted'
+  logicSummary: string
+  boilerplateSuppressed: boolean
+  rawDiff?: string
+}
+
+// Metric values before/after wave
+export interface MetricSnapshot {
+  p99Latency: number
+  avgLatency: number
+  testCoverage: number
+  tokenCost: number
+  chainCoherence: number
+  gatePassRate: number
+  dependencyCount: number
+}
+
+// Metric change (delta)
+export interface MetricDelta {
+  name: string
+  before: number
+  after: number
+  change: number
+  changeType: 'improvement' | 'regression' | 'neutral'
+  severity: 'warning' | 'success' | 'info'
+}
+
+// Impact prediction for a file
+export interface ImpactPrediction {
+  filePath: string
+  riskLevel: 'high' | 'medium' | 'low'
+  predictedImpact: string[]
+  affectedMetrics: string[]
+}
+
+// Complete wave data for diff
+export interface WaveData {
+  waveId: string
+  intentDeltas: IntentDelta[]
+  filesChanged: number
+  files: string[]
+  metricsBefore: MetricSnapshot
+  metricsAfter: MetricSnapshot
+  metricDeltas: MetricDelta[]
+  impactPredictions: ImpactPrediction[]
+}
+
+// Constraint HUD display data
+export interface ConstraintHUDData {
+  metrics: MetricDelta[]
+  isAnyRegression: boolean
+  isAllImproved: boolean
+}
+
 // ── GitHub Issues ──────────────────────────────────────────────────────
 
 export type TicketType = 'feature' | 'bug' | 'task' | 'epic' | 'docs' | 'refactor'

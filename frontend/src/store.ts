@@ -41,6 +41,7 @@ interface Store {
   intentDetail: IntentDetail | null
   leftPanelTab: 'issues' | 'agents'
   leftPanelOpen: boolean
+  githubRepo: string
 
   // Actions
   setZoomLevel: (z: number) => void
@@ -50,6 +51,7 @@ interface Store {
   setLeftPanelTab: (t: 'issues' | 'agents') => void
   setLeftPanelOpen: (o: boolean) => void
   setSelectedIssue: (i: Issue | null) => void
+  setGithubRepo: (repo: string) => void
 
   fetchGraph: (zoom?: number) => Promise<void>
   fetchAssignments: () => Promise<void>
@@ -89,6 +91,7 @@ const useStore = create<Store>((set, get) => ({
   intentDetail: null,
   leftPanelTab: 'issues',
   leftPanelOpen: true,
+  githubRepo: '',
 
   setZoomLevel: (z) => set({ zoomLevel: z }),
   setSolving: (s) => set({ solving: s }),
@@ -97,6 +100,11 @@ const useStore = create<Store>((set, get) => ({
   setLeftPanelTab: (t) => set({ leftPanelTab: t }),
   setLeftPanelOpen: (o) => set({ leftPanelOpen: o }),
   setSelectedIssue: (i) => set({ selectedIssue: i }),
+  setGithubRepo: (repo) => {
+    set({ githubRepo: repo })
+    // Refetch issues when repo changes
+    get().fetchIssues()
+  },
 
   fetchGraph: async (zoom) => {
     const level = zoom !== undefined ? zoom : get().zoomLevel
@@ -142,7 +150,9 @@ const useStore = create<Store>((set, get) => ({
   fetchIssues: async () => {
     set({ issuesLoading: true })
     try {
-      const res = await fetch(`${API}/api/issues`)
+      const repo = get().githubRepo
+      const url = repo ? `/api/issues?repo=${encodeURIComponent(repo)}` : '/api/issues'
+      const res = await fetch(url)
       const data = await res.json()
       set({ issues: data.issues, issuesLoading: false })
     } catch (err) {
