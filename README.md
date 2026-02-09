@@ -14,6 +14,7 @@ Traditional IDEs organize around files. Intent IDE organizes around **what the s
 - **Constraint Panel** — Sliders for quality floor, budget cap, overkill tolerance, deadline compliance. Move a slider, the solver re-runs, the canvas updates.
 - **Agent Roster** — 300 agents (Claude, GPT-5.2, Gemini, Llama, etc.) with live utilization, quality scores, and cost rates
 - **Economics Dashboard** — Total spend, $/story-point, agent utilization, constraint violations
+- **Wave Diff Panel** — Mass diff view for Conductor-era code review with semantic diffs, constraint impact tables, and impact heatmaps
 
 The solver minimizes cost while satisfying: every task assigned exactly once, no agent over capacity, quality floors met, dependencies respected.
 
@@ -25,16 +26,15 @@ See [docs/intent-ide-2030.md](docs/intent-ide-2030.md) for the full vision.
 # Backend (Flask + WebSocket)
 source .venv/bin/activate
 pip install -e .
-python -m intent_ide
+python -m src.intent_ide.app
 
-# Frontend (React + React Flow) — in a separate terminal
+# Frontend (React + React Flow + Bun) — in a separate terminal
 cd frontend
-npm install
-npm run build   # production build, served by Flask
-npm run dev     # or: dev server on :5173 for hot reload
+bun install
+bun dev  # dev server on :3000
 ```
 
-Then open http://localhost:5001
+Then open http://localhost:3000
 
 ## Project Structure
 
@@ -50,13 +50,15 @@ src/
 │   ├── css_renderer_agents.py    # Agent pool (300 agents)
 │   ├── css_renderer_intents.py   # Intent generation (10K tasks)
 │   ├── solve_10k_ortools.py      # CP-SAT solver
-│   └── report_10k.py             # Shift report generation
+│   ├── github_tickets.py         # GitHub issues integration
+│   └── telemetry.py               # Metrics computation
 │
 frontend/                 # React + TypeScript + Tailwind
 ├── src/
-│   ├── components/       # IntentCanvas, ConstraintPanel, AgentRoster
+│   ├── components/       # IntentCanvas, ConstraintPanel, WaveDiffPanel
+│   │   └── wave-diff/    # SemanticDiff, ConstraintHUD, ImpactHeatmap
 │   ├── store.ts          # Zustand state (constraints, assignments)
-│   └── types.ts          # Intent, Agent, Status types
+│   └── types.ts          # Intent, Agent, Status, WaveData types
 
 notebooks/                # Jupyter notebooks for exploration
 ├── quantum-routing-10k.ipynb    # 10K intent simulation
@@ -64,6 +66,27 @@ notebooks/                # Jupyter notebooks for exploration
 docs/                     # Design documents
 ├── intent-ide-2030.md    # Vision doc
 ├── nextsteps.md          # Roadmap
+└── AGENT_PROFILES_WORKFLOWS.md  # Agent behavior specifications
+```
+
+## Features
+
+### Wave Diff Panel (Mock UI)
+
+A 3-pane interface for mass diff review:
+
+- **Left: Intent Sidebar** — Work organized by Agent + Intent rather than by file
+- **Center: Semantic Diff** — Logic summary at 3 granularity levels (Intent → Architecture → Code)
+- **Right: Constraint HUD** — Before/after metrics comparison (latency, cost, coverage)
+- **Impact Heatmap** — Risk predictions for each changed file
+
+### GitHub Integration
+
+Fetch and decompose GitHub issues into intents:
+
+```bash
+# Set repo in Settings modal (e.g., facebook/react)
+# Issues are automatically fetched and decomposed
 ```
 
 ## The Solver
@@ -111,4 +134,4 @@ Distributed across a 5-stage CSS Renderer pipeline (Parsing → Style → Layout
 - `numpy`, `matplotlib` — Data/visualization
 - `dwave-ocean-sdk` — Optional quantum annealing
 
-Python 3.13, Node 18+.
+Python 3.13, Node 18+, Bun 1.0+.
