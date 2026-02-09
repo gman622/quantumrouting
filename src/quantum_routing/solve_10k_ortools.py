@@ -7,8 +7,13 @@ constraints using auxiliary integer variables for assigned quality.
 Key optimization: 300 agents collapse to 10 model types (all instances of the
 same model are interchangeable). This reduces boolean variables from ~2.6M to
 ~87K — a 30x reduction that fits comfortably in memory.
+
+Profile filtering (optional): when a staffing plan is provided, each intent is
+restricted to model types that match its assigned profile via PROFILE_AGENT_MODELS.
+This narrows the search space dramatically (typically 70-90% variable reduction).
 """
 
+import logging
 import time
 from collections import defaultdict
 
@@ -17,6 +22,9 @@ from ortools.sat.python import cp_model
 from . import css_renderer_config as cfg
 from .css_renderer_agents import can_assign
 from .css_renderer_intents import PROJECT_DURATION_DAYS
+from .staffing_engine import assign_profile, PROFILE_AGENT_MODELS
+
+logger = logging.getLogger(__name__)
 
 
 # Scale factor: CP-SAT requires integer coefficients. Multiply dollar costs
@@ -78,13 +86,139 @@ def _get_cost_for_type(intent, model_type):
     return token_cost + overkill_cost + latency_cost
 
 
-def solve_cpsat(intents, agents, agent_names, time_limit=cfg.CLASSICAL_TIME_BUDGET):
-    """Solve the 10K assignment problem using OR-Tools CP-SAT."""
+def _build_profile_index(staffing_plan):
+    """Build a flat mapping from intent ID to profile name.
+
+    The staffing plan nests intents inside waves.  This flattens it into
+    a dict ``{intent_id: profile_name}`` for O(1) lookup during model
+    construction.
+    """
+    index = {}
+    for wave in staffing_plan.get("waves", []):
+        for intent_entry in wave.get("intents", []):
+            index[intent_entry["id"]] = intent_entry["profile"]
+    return index
+
+
+def get_allowed_agents_for_intent(intent_idx, intents, agents, agent_names,
+                                  staffing_plan):
+    """Return the set of allowed agent indices for an intent.
+
+    When *staffing_plan* is ``None``, every agent that passes the
+    capability / quality check (``can_assign``) is allowed.  When a plan
+    is provided, agents are further restricted to model types listed in
+    ``PROFILE_AGENT_MODELS`` for the intent's assigned profile.
+
+    Args:
+        intent_idx: Index into the *intents* list.
+        intents: Full list of intent dicts.
+        agents: Agent pool dict keyed by agent name.
+        agent_names: Ordered list of agent names.
+        staffing_plan: Output of ``generate_staffing_plan()`` or ``None``.
+
+    Returns:
+        set[int]: Indices into *agent_names* that are allowed.
+    """
+    intent = intents[intent_idx]
+    allowed = set()
+
+    # Determine allowed model type names from the profile (if filtering)
+    allowed_model_names = None
+    if staffing_plan is not None:
+        profile_index = _build_profile_index(staffing_plan)
+        intent_id = intent.get("id", "")
+        profile = profile_index.get(intent_id)
+        if profile is None:
+            # Intent not found in plan -- fall back to assign_profile()
+            profile = assign_profile(intent)
+        allowed_model_names = set(
+            PROFILE_AGENT_MODELS.get(profile, [])
+        )
+
+    for j, name in enumerate(agent_names):
+        if not can_assign(intent, name, agents):
+            continue
+        if allowed_model_names is not None:
+            if agents[name]["model_type"] not in allowed_model_names:
+                continue
+        allowed.add(j)
+
+    return allowed
+
+
+def _get_allowed_model_types_for_intent(intent, model_types,
+                                        profile_index):
+    """Return the set of model-type indices allowed for *intent*.
+
+    Applies both the capability check (``_can_assign_type``) and the
+    profile filter.  *profile_index* is a dict ``{intent_id: profile}``
+    built by ``_build_profile_index`` or ``None`` when no staffing plan
+    is active.
+
+    Returns:
+        (allowed_indices, was_filtered):
+            allowed_indices -- list of model-type indices
+            was_filtered   -- True if the profile filter removed any
+                              type that would have been capability-valid
+    """
+    # First pass: capability-valid types
+    capability_valid = []
+    for t, mt in enumerate(model_types):
+        if _can_assign_type(intent, mt):
+            capability_valid.append(t)
+
+    if profile_index is None:
+        return capability_valid, False
+
+    # Determine the profile for this intent
+    intent_id = intent.get("id", "")
+    profile = profile_index.get(intent_id)
+    if profile is None:
+        profile = assign_profile(intent)
+
+    allowed_model_names = set(PROFILE_AGENT_MODELS.get(profile, []))
+
+    # Second pass: intersect with profile-allowed model types
+    profile_valid = [
+        t for t in capability_valid
+        if model_types[t]["name"] in allowed_model_names
+    ]
+
+    was_filtered = len(profile_valid) < len(capability_valid)
+    return profile_valid, was_filtered
+
+
+def solve_cpsat(intents, agents, agent_names, time_limit=cfg.CLASSICAL_TIME_BUDGET,
+                staffing_plan=None):
+    """Solve the 10K assignment problem using OR-Tools CP-SAT.
+
+    Args:
+        intents: List of intent dicts.
+        agents: Agent pool dict keyed by agent name.
+        agent_names: Ordered list of agent names.
+        time_limit: CP-SAT solver time limit in seconds.
+        staffing_plan: Optional staffing plan from ``generate_staffing_plan()``.
+            When provided, each intent is restricted to model types matching
+            its assigned profile via ``PROFILE_AGENT_MODELS``.  When ``None``,
+            no profile filtering is applied (original behavior).
+
+    Returns:
+        dict mapping intent index to assigned agent name, or empty dict
+        if no feasible solution is found.
+    """
     num_intents = len(intents)
     model_types, _ = _build_model_types(agents, agent_names)
     num_types = len(model_types)
 
-    print(f"Building CP-SAT model: {num_intents} tasks x {num_types} model types")
+    # Build profile index for fast lookup (None when no plan provided)
+    profile_index = (
+        _build_profile_index(staffing_plan) if staffing_plan is not None
+        else None
+    )
+
+    filtering_label = " (with profile filtering)" if staffing_plan else ""
+    print(f"Building CP-SAT model{filtering_label}: "
+          f"{num_intents} tasks x {num_types} model types")
     build_start = time.time()
 
     model = cp_model.CpModel()
@@ -92,13 +226,41 @@ def solve_cpsat(intents, agents, agent_names, time_limit=cfg.CLASSICAL_TIME_BUDG
     # --- Decision variables: x[i, t] = 1 iff intent i assigned to model type t ---
     x = {}
     valid_types_for_intent = defaultdict(list)
+    vars_without_filtering = 0
+    vars_eliminated_by_profile = 0
+
     for i, intent in enumerate(intents):
-        for t, mt in enumerate(model_types):
-            if _can_assign_type(intent, mt):
-                x[i, t] = model.new_bool_var(f'x_{i}_{t}')
-                valid_types_for_intent[i].append(t)
+        allowed, was_filtered = _get_allowed_model_types_for_intent(
+            intent, model_types, profile_index
+        )
+
+        # Count capability-valid types (what we would have without filtering)
+        capability_valid_count = sum(
+            1 for t, mt in enumerate(model_types)
+            if _can_assign_type(intent, mt)
+        )
+        vars_without_filtering += capability_valid_count
+
+        for t in allowed:
+            x[i, t] = model.new_bool_var(f'x_{i}_{t}')
+            valid_types_for_intent[i].append(t)
+
+        # Track how many variables were eliminated by profile filtering
+        vars_eliminated_by_profile += capability_valid_count - len(allowed)
 
     print(f"  Boolean variables: {len(x):,}")
+
+    # Log profile filtering statistics
+    if staffing_plan is not None:
+        if vars_without_filtering > 0:
+            pct = vars_eliminated_by_profile / vars_without_filtering * 100
+        else:
+            pct = 0.0
+        msg = (f"  Profile filtering: {vars_eliminated_by_profile:,} of "
+               f"{vars_without_filtering:,} variables eliminated "
+               f"({pct:.0f}% reduction)")
+        print(msg)
+        logger.info(msg)
 
     # --- Constraints ---
     for i in range(num_intents):

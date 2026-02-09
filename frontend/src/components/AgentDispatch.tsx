@@ -2,8 +2,8 @@ import useStore from '../store'
 
 export default function AgentDispatch() {
   const agentSummary = useStore((s) => s.agentSummary)
-  const agentPanelOpen = useStore((s) => s.agentPanelOpen)
-  const setAgentPanelOpen = useStore((s) => s.setAgentPanelOpen)
+  const agentPanelOpen = useStore((s) => s.leftPanelOpen)
+  const setAgentPanelOpen = useStore((s) => s.setLeftPanelOpen)
 
   return (
     <div

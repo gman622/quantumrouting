@@ -18,6 +18,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from quantum_routing.css_renderer_agents import build_agent_pool, get_agent_stats
 from quantum_routing.css_renderer_intents import generate_intents, build_workflow_chains
 from quantum_routing.solve_10k_ortools import solve_cpsat
+from quantum_routing.github_tickets import import_all_issues, decompose_ticket
+from quantum_routing.feature_decomposer import (
+    decompose_realtime_collab_feature,
+    decompose_slider_bug,
+    simulate_routing,
+)
 
 from .graph_data import get_graph, get_assignments_metadata, get_agent_summary
 from .solver_worker import SolverWorker
@@ -130,6 +136,74 @@ def api_solve_status(job_id):
         'elapsed': round(job.elapsed, 1),
         'error': job.error,
     })
+
+
+@app.route('/api/issues')
+def api_issues():
+    """Fetch GitHub issues and their decomposed intents."""
+    issues_data = []
+
+    # Try to fetch from GitHub
+    try:
+        tickets = import_all_issues(state='open')
+    except Exception as e:
+        print(f'Warning: Could not fetch GitHub issues: {e}')
+        tickets = []
+
+    # For demo: if we have the specific issues we created, use detailed decomposition
+    for ticket in tickets:
+        if ticket.id == '1':
+            # Real-time collaboration feature
+            intents = decompose_realtime_collab_feature()
+            result = simulate_routing(intents)
+            issues_data.append({
+                'id': ticket.id,
+                'title': ticket.title,
+                'body': ticket.body[:200] + '...' if len(ticket.body) > 200 else ticket.body,
+                'labels': ticket.labels,
+                'ticketType': 'feature',
+                'url': ticket.url,
+                'intentIds': [i.id for i in intents],
+                'intentCount': len(intents),
+                'completedCount': 0,
+                'totalCost': result['total_cost'],
+                'status': 'pending',
+            })
+        elif ticket.id == '2':
+            # Slider bug
+            intents = decompose_slider_bug()
+            result = simulate_routing(intents)
+            issues_data.append({
+                'id': ticket.id,
+                'title': ticket.title,
+                'body': ticket.body[:200] + '...' if len(ticket.body) > 200 else ticket.body,
+                'labels': ticket.labels,
+                'ticketType': 'bug',
+                'url': ticket.url,
+                'intentIds': [i.id for i in intents],
+                'intentCount': len(intents),
+                'completedCount': 0,
+                'totalCost': result['total_cost'],
+                'status': 'pending',
+            })
+        else:
+            # Generic decomposition
+            intent_specs = decompose_ticket(ticket)
+            issues_data.append({
+                'id': ticket.id,
+                'title': ticket.title,
+                'body': ticket.body[:200] + '...' if len(ticket.body) > 200 else ticket.body,
+                'labels': ticket.labels,
+                'ticketType': ticket.ticket_type.name.lower(),
+                'url': ticket.url,
+                'intentIds': [i['id'] for i in intent_specs],
+                'intentCount': len(intent_specs),
+                'completedCount': 0,
+                'totalCost': 0.0,  # Would need routing to calculate
+                'status': 'pending',
+            })
+
+    return jsonify({'issues': issues_data, 'total': len(issues_data)})
 
 
 # ── WebSocket events ─────────────────────────────────────────────────────

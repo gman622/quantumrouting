@@ -7,6 +7,7 @@ import type {
   AgentTypeSummary,
   AgentStats,
   IntentDetail,
+  Issue,
 } from './types'
 
 const API = ''  // proxy via vite dev server; empty string = same origin
@@ -25,6 +26,11 @@ interface Store {
   agentSummary: AgentTypeSummary[]
   agentStats: AgentStats | null
 
+  // Issues (GitHub)
+  issues: Issue[]
+  selectedIssue: Issue | null
+  issuesLoading: boolean
+
   // Solver state
   solving: boolean
   solverElapsed: number
@@ -33,19 +39,23 @@ interface Store {
   // UI state
   selectedNode: GraphNode | null
   intentDetail: IntentDetail | null
-  agentPanelOpen: boolean
+  leftPanelTab: 'issues' | 'agents'
+  leftPanelOpen: boolean
 
   // Actions
   setZoomLevel: (z: number) => void
   setSolving: (s: boolean) => void
   setSolverElapsed: (e: number) => void
   setSelectedNode: (n: GraphNode | null) => void
-  setAgentPanelOpen: (o: boolean) => void
+  setLeftPanelTab: (t: 'issues' | 'agents') => void
+  setLeftPanelOpen: (o: boolean) => void
+  setSelectedIssue: (i: Issue | null) => void
 
   fetchGraph: (zoom?: number) => Promise<void>
   fetchAssignments: () => Promise<void>
   fetchAgents: () => Promise<void>
   fetchIntentDetail: (idx: number) => Promise<void>
+  fetchIssues: () => Promise<void>
   submitSolve: (constraints: Constraints) => Promise<void>
   onSolverCompleted: () => void
 }
@@ -67,19 +77,26 @@ const useStore = create<Store>((set, get) => ({
   agentSummary: [],
   agentStats: null,
 
+  issues: [],
+  selectedIssue: null,
+  issuesLoading: false,
+
   solving: false,
   solverElapsed: 0,
   solverJobId: null,
 
   selectedNode: null,
   intentDetail: null,
-  agentPanelOpen: true,
+  leftPanelTab: 'issues',
+  leftPanelOpen: true,
 
   setZoomLevel: (z) => set({ zoomLevel: z }),
   setSolving: (s) => set({ solving: s }),
   setSolverElapsed: (e) => set({ solverElapsed: e }),
   setSelectedNode: (n) => set({ selectedNode: n }),
-  setAgentPanelOpen: (o) => set({ agentPanelOpen: o }),
+  setLeftPanelTab: (t) => set({ leftPanelTab: t }),
+  setLeftPanelOpen: (o) => set({ leftPanelOpen: o }),
+  setSelectedIssue: (i) => set({ selectedIssue: i }),
 
   fetchGraph: async (zoom) => {
     const level = zoom !== undefined ? zoom : get().zoomLevel
@@ -119,6 +136,18 @@ const useStore = create<Store>((set, get) => ({
       set({ intentDetail: data })
     } catch (err) {
       console.error('Failed to fetch intent detail:', err)
+    }
+  },
+
+  fetchIssues: async () => {
+    set({ issuesLoading: true })
+    try {
+      const res = await fetch(`${API}/api/issues`)
+      const data = await res.json()
+      set({ issues: data.issues, issuesLoading: false })
+    } catch (err) {
+      console.error('Failed to fetch issues:', err)
+      set({ issuesLoading: false })
     }
   },
 

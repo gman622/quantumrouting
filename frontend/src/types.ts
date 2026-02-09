@@ -144,3 +144,26 @@ export interface SolverCompleted {
   elapsed: number
   error: string | null
 }
+
+// ── GitHub Issues ──────────────────────────────────────────────────────
+
+export type TicketType = 'feature' | 'bug' | 'task' | 'epic' | 'docs' | 'refactor'
+
+export interface Issue {
+  id: string
+  title: string
+  body: string
+  labels: string[]
+  ticketType: TicketType
+  url: string
+  intentIds: string[]
+  intentCount: number
+  completedCount: number
+  totalCost: number
+  status: 'pending' | 'decomposing' | 'in_progress' | 'completed'
+}
+
+export interface IssuesResponse {
+  issues: Issue[]
+  total: number
+}

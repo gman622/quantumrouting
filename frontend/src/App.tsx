@@ -4,13 +4,14 @@ import useSolver from './hooks/useSolver'
 import IntentCanvas from './components/IntentCanvas'
 import ConstraintPanel from './components/ConstraintPanel'
 import ViolationsDashboard from './components/ViolationsDashboard'
-import AgentDispatch from './components/AgentDispatch'
+import LeftPanel from './components/LeftPanel'
 import IntentDetail from './components/IntentDetail'
 
 export default function App() {
   const fetchGraph = useStore((s) => s.fetchGraph)
   const fetchAssignments = useStore((s) => s.fetchAssignments)
   const fetchAgents = useStore((s) => s.fetchAgents)
+  const fetchIssues = useStore((s) => s.fetchIssues)
   const solving = useStore((s) => s.solving)
 
   // Connect WebSocket
@@ -21,7 +22,8 @@ export default function App() {
     fetchGraph(0)
     fetchAssignments()
     fetchAgents()
-  }, [fetchGraph, fetchAssignments, fetchAgents])
+    fetchIssues()
+  }, [fetchGraph, fetchAssignments, fetchAgents, fetchIssues])
 
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-900 text-slate-200 overflow-hidden">
@@ -43,8 +45,8 @@ export default function App() {
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0">
-        {/* Left: Agent dispatch */}
-        <AgentDispatch />
+        {/* Left: Issues & Agents */}
+        <LeftPanel />
 
         {/* Center: Canvas */}
         <main className="flex-1 relative">
