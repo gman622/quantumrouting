@@ -213,6 +213,16 @@ DECOMPOSITION_TEMPLATES = {
 }
 
 
+def decompose_ticket_smart(ticket: Ticket) -> List[Dict]:
+    """Decompose a ticket using LLM if available, template fallback otherwise."""
+    from quantum_routing.llm_decomposer import decompose_ticket_llm
+
+    result = decompose_ticket_llm(ticket)
+    if result is not None:
+        return result
+    return decompose_ticket(ticket)
+
+
 def decompose_ticket(ticket: Ticket) -> List[Dict]:
     """Decompose a ticket into intent specifications.
 
