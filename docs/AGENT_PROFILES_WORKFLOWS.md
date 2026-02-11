@@ -41,7 +41,7 @@ git-pr:
 5. Identify root cause and impact scope
 ```
 
-**🚀 new-feature-trailblazer executing "Implement the solution":**
+**🚀 feature-trailblazer executing "Implement the solution":**
 ```
 1. Design extensible architecture with interfaces
 2. Implement core functionality with clean abstractions
@@ -156,7 +156,7 @@ When the staffing engine assigns `bug-hunter` to intent `bug2-5-add-debounce`:
 
 **Personality**: Methodical detective who loves solving puzzles and preventing future issues.
 
-### 🚀 `new-feature-trailblazer`
+### 🚀 `feature-trailblazer`
 
 **Mission**: Innovation, architecture, feature design and implementation
 
@@ -326,7 +326,7 @@ Task Predator Analysis:
 - ✅ No new bugs introduced
 - 📊 **Metric**: Bug recurrence rate < 5%
 
-**🚀 new-feature-trailblazer Success**:
+**🚀 feature-trailblazer Success**:
 - ✅ Feature meets all requirements
 - ✅ Architecture supports future extensions
 - ✅ Performance benchmarks achieved
@@ -409,13 +409,13 @@ tasks:
   - id: add-dashboard-widget
     description: "Add real-time metrics widget to admin dashboard with WebSocket integration"
     workflow: "git-pr"
-    profile: "new-feature-trailblazer"
+    profile: "feature-trailblazer"
     priority: "medium"
     
   - id: api-rate-limiting
     description: "Implement adaptive rate limiting with Redis backend"
     workflow: "git-pr"
-    profile: "new-feature-trailblazer"
+    profile: "feature-trailblazer"
     priority: "high"
     
   # Quality Assurance

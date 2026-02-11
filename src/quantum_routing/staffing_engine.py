@@ -421,7 +421,7 @@ PROFILE_AGENT_MODELS: Dict[str, List[str]] = {
 }
 
 # Token rates for cost estimation (from css_renderer_config.py)
-_TOKEN_RATES: Dict[str, float] = {
+TOKEN_RATES: Dict[str, float] = {
     "claude": 0.000020,
     "gpt5.2": 0.000030,
     "gemini": 0.000005,
@@ -434,14 +434,14 @@ _TOKEN_RATES: Dict[str, float] = {
 def _cheapest_model_for_profile(profile: str) -> str:
     """Return the cheapest capable model for a profile."""
     models = PROFILE_AGENT_MODELS.get(profile, ["gemini"])
-    return min(models, key=lambda m: _TOKEN_RATES.get(m, 0))
+    return min(models, key=lambda m: TOKEN_RATES.get(m, 0))
 
 
 def _estimate_intent_cost(intent: Any, profile: str) -> float:
     """Estimate the cost of running an intent with a given profile."""
     tokens = _get_estimated_tokens(intent)
     model = _cheapest_model_for_profile(profile)
-    rate = _TOKEN_RATES.get(model, 0.000005)
+    rate = TOKEN_RATES.get(model, 0.000005)
     return tokens * rate
 
 

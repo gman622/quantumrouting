@@ -16,22 +16,9 @@ from __future__ import annotations
 import statistics
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
-
-# ---------------------------------------------------------------------------
-# Profiles (re-exported from staffing_engine for self-contained usage)
-# ---------------------------------------------------------------------------
-
-PROFILES = [
-    "bug-hunter",
-    "feature-trailblazer",
-    "testing-guru",
-    "tenacious-unit-tester",
-    "docs-logs-wizard",
-    "task-predator",
-    "code-ace-reviewer",
-]
+from quantum_routing.staffing_engine import PROFILES
 
 # File extensions that count as documentation artifacts
 _DOC_EXTENSIONS = frozenset([
@@ -394,7 +381,7 @@ def _validate_code_ace_reviewer(result: IntentResult) -> ValidationResult:
 
 
 # Profile validator dispatch table
-_PROFILE_VALIDATORS: Dict[str, type(lambda: None)] = {
+_PROFILE_VALIDATORS: Dict[str, Callable[[IntentResult], ValidationResult]] = {
     "bug-hunter": _validate_bug_hunter,
     "feature-trailblazer": _validate_feature_trailblazer,
     "testing-guru": _validate_testing_guru,

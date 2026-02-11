@@ -37,7 +37,7 @@ from quantum_routing.quality_gates import (
 )
 from quantum_routing.staffing_engine import (
     PROFILE_AGENT_MODELS,
-    _TOKEN_RATES,
+    TOKEN_RATES,
 )
 
 
@@ -321,7 +321,7 @@ class SimulatedBackend:
         )))
 
         # Higher-quality models produce slightly better results
-        model_bonus = _TOKEN_RATES.get(context.model, 0) * 1000
+        model_bonus = TOKEN_RATES.get(context.model, 0) * 1000
         quality = min(1.0, quality + model_bonus)
 
         self._pr_counter += 1
@@ -395,7 +395,7 @@ def _next_higher_model(profile: str, current_model: str) -> str:
     """Pick the next-higher-quality model from PROFILE_AGENT_MODELS."""
     models = PROFILE_AGENT_MODELS.get(profile, [])
     # Sort by token rate (proxy for quality) descending
-    sorted_models = sorted(models, key=lambda m: _TOKEN_RATES.get(m, 0), reverse=True)
+    sorted_models = sorted(models, key=lambda m: TOKEN_RATES.get(m, 0), reverse=True)
 
     found = False
     for m in reversed(sorted_models):
@@ -465,10 +465,18 @@ class WaveExecutor:
 
         # Tally stats
         result.total_time = time.time() - plan_start
+
+        # Build token/model lookup from the staffing plan
+        intent_specs: Dict[str, Dict[str, Any]] = {}
+        for wp in staffing_plan["waves"]:
+            for ispec in wp["intents"]:
+                intent_specs[ispec["id"]] = ispec
+
         for ie_result in result.all_results:
-            tokens = 0
-            # Estimate cost from the result
-            rate = _TOKEN_RATES.get("gemini", 0.000005)  # approximate
+            spec = intent_specs.get(ie_result.intent_id, {})
+            tokens = spec.get("estimated_tokens", 0)
+            model = spec.get("model", "gemini")
+            rate = TOKEN_RATES.get(model, 0.000005)
             result.total_cost += tokens * rate
 
             if ie_result.status == "completed":
