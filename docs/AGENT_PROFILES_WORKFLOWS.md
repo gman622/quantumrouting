@@ -95,6 +95,51 @@ ts-pr-review:
     - "Submit review comments/suggestions on the PR"
 ```
 
+## Staffing Engine Integration
+
+The staffing engine (`src/quantum_routing/staffing_engine.py`) automatically maps intents to profiles based on tags and phase keywords. See [staffing-engine-api.md](staffing-engine-api.md) for the full API reference.
+
+### Profile Routing Table
+
+| Priority | Intent tags/phase | Assigned profile |
+|----------|-------------------|------------------|
+| 1 | `verify` | `code-ace-reviewer` |
+| 2 | `fix`, `reproduce`, `diagnose`, `root-cause`, `hotfix` | `bug-hunter` |
+| 3 | `test`, `testing`, `unit`, `integration`, `regression` | `testing-guru` (or `tenacious-unit-tester` for trivial/simple) |
+| 4 | `docs`, `document`, `api-docs`, `user-guide` | `docs-logs-wizard` |
+| 5 | `analysis`, `analyze`, `requirements`, `research`, `design` | `task-predator` |
+| 6 | complexity = `epic` | `task-predator` |
+| 7 | `implement`, `backend`, `frontend`, `refactor` | `feature-trailblazer` |
+| 8 | (fallback) | `feature-trailblazer` |
+
+### Agent Profile Files
+
+Each profile has a corresponding markdown file in `.claude/agents/`:
+
+```
+.claude/agents/
+├── bug-hunter.md
+├── code-ace-reviewer.md
+├── docs-logs-wizard.md
+├── feature-trailblazer.md
+├── task-predator.md
+├── tenacious-unit-tester.md
+└── testing-guru.md
+```
+
+These files define **Mission**, **Workflow**, and **Quality Gates** sections that the `AgentTodoGenerator` extracts to create per-intent todo markdown during execution.
+
+### Profile Execution Example
+
+When the staffing engine assigns `bug-hunter` to intent `bug2-5-add-debounce`:
+
+1. `assign_profile()` matches tag `"fix"` → returns `"bug-hunter"`
+2. `generate_staffing_plan()` selects cheapest capable model (e.g., `kimi2.5`)
+3. `WaveExecutor` reads `.claude/agents/bug-hunter.md` for Mission/Workflow/Quality Gates
+4. `AgentTodoGenerator` produces `bug2-5-add-debounce-todo.md` with profile-specific instructions
+5. Backend executes the intent
+6. `validate_intent()` checks bug-hunter criteria: quality > 0, tests pass, artifacts exist
+
 ## Specialized Profiles
 
 ### 🐛 `bug-hunter`
