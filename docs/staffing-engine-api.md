@@ -184,7 +184,8 @@ Produce a full staffing plan combining `assign_profile()` and `compute_waves()` 
           "complexity": "trivial",
           "estimated_tokens": 500,
           "estimated_cost": 0.0025,
-          "depends_on": []
+          "depends_on": [],
+          "wave": 0
         }
       ]
     }
@@ -192,7 +193,7 @@ Produce a full staffing plan combining `assign_profile()` and `compute_waves()` 
 }
 ```
 
-Cost estimation selects the cheapest model capable of serving each profile (see `PROFILE_AGENT_MODELS` and `_TOKEN_RATES`).
+Cost estimation selects the cheapest model capable of serving each profile (see `PROFILE_AGENT_MODELS` and `TOKEN_RATES`).
 
 ---
 
@@ -430,3 +431,126 @@ todo_md = gen.generate_todo(
     output_dir="tmp/todos",  # optional: write to disk
 )
 ```
+
+---
+
+## `github_backend` module
+
+Materializes a staffing plan as real GitHub issues following the 4-agent companion pattern.
+
+### Constants
+
+| Name | Type | Description |
+|------|------|-------------|
+| `COMPANION_AGENTS` | `list[str]` | The 4 companion roles in creation order |
+| `AGENT_LABEL_COLORS` | `dict[str, str]` | Hex color for each agent's GitHub label |
+
+### `ensure_agent_labels(repo=None) → dict[str, bool]`
+
+Create GitHub labels for all agent profiles using `gh label create --force`. Idempotent.
+
+**Args**: `repo` — optional `"owner/repo"`. Uses current repo if `None`.
+
+**Returns**: Dict mapping profile name to success bool.
+
+```python
+from quantum_routing.github_backend import ensure_agent_labels
+
+results = ensure_agent_labels(repo="octocat/hello")
+# {"feature-trailblazer": True, "tenacious-unit-tester": True, ...}
+```
+
+---
+
+### `create_companion_issues(parent_issue_number, parent_title, staffing_plan, repo=None) → dict[str, int]`
+
+Create 4 companion issues for a parent GitHub issue:
+
+1. **feature-trailblazer** — implements the feature
+2. **tenacious-unit-tester** — writes tests
+3. **docs-logs-wizard** — updates documentation
+4. **code-ace-reviewer** — final review (blocked by the other 3)
+
+Each issue gets:
+- Title: `[Agent: profile] parent_title`
+- Label: the agent profile name
+- Body: parent link, assigned intents, quality gates checklist
+- The reviewer issue body includes dependency links to the other 3
+
+After creating all 4, posts a summary comment on the parent issue.
+
+**Returns**: Dict mapping agent profile to created issue number.
+
+```python
+from quantum_routing.github_backend import create_companion_issues
+
+created = create_companion_issues(
+    parent_issue_number=20,
+    parent_title="Add caching to API layer",
+    staffing_plan=plan,
+    repo="owner/repo",
+)
+# {"feature-trailblazer": 21, "tenacious-unit-tester": 22, ...}
+```
+
+---
+
+### `post_comment(issue_number, body, repo=None) → bool`
+
+Post a comment on a GitHub issue. Returns `True` on success.
+
+---
+
+### `GitHubProgressReporter`
+
+Progress callback that posts comments on the parent issue at key milestones.
+
+Only fires on `wave_completed` and `execution_completed` events to avoid spamming.
+
+```python
+from quantum_routing.github_backend import GitHubProgressReporter
+
+reporter = GitHubProgressReporter(parent_issue_number=20, repo="owner/repo")
+
+# Use as a progress callback
+executor = WaveExecutor(progress_callback=reporter)
+```
+
+---
+
+## Flask Endpoint: `/api/materialize`
+
+**`POST /api/materialize`**
+
+Decompose a GitHub issue, generate a staffing plan, and create companion issues.
+
+**Request body**:
+```json
+{
+  "issue_number": 13,
+  "repo": "owner/repo"  // optional, uses current repo if omitted
+}
+```
+
+**Response**:
+```json
+{
+  "parent_issue": 13,
+  "parent_title": "Wire telemetry into ViolationsDashboard",
+  "companion_issues": {
+    "feature-trailblazer": 21,
+    "tenacious-unit-tester": 22,
+    "docs-logs-wizard": 23,
+    "code-ace-reviewer": 24
+  },
+  "labels_created": 7,
+  "staffing_plan": {
+    "total_intents": 5,
+    "total_waves": 3,
+    "peak_parallelism": 2,
+    "total_estimated_cost": 0.0150
+  }
+}
+```
+
+Also emits a `materialize_completed` WebSocket event with the same payload.

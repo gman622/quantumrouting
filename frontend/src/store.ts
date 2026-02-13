@@ -8,6 +8,7 @@ import type {
   AgentStats,
   IntentDetail,
   Issue,
+  MaterializeResult,
 } from './types'
 
 const API = ''  // proxy via vite dev server; empty string = same origin
@@ -39,16 +40,21 @@ interface Store {
   // UI state
   selectedNode: GraphNode | null
   intentDetail: IntentDetail | null
-  leftPanelTab: 'issues' | 'agents'
+  leftPanelTab: 'issues' | 'agents' | 'staffing'
   leftPanelOpen: boolean
   githubRepo: string
+
+  // Staffing / Materialize
+  materializing: boolean
+  materializeResult: MaterializeResult | null
+  materializeError: string | null
 
   // Actions
   setZoomLevel: (z: number) => void
   setSolving: (s: boolean) => void
   setSolverElapsed: (e: number) => void
   setSelectedNode: (n: GraphNode | null) => void
-  setLeftPanelTab: (t: 'issues' | 'agents') => void
+  setLeftPanelTab: (t: 'issues' | 'agents' | 'staffing') => void
   setLeftPanelOpen: (o: boolean) => void
   setSelectedIssue: (i: Issue | null) => void
   setGithubRepo: (repo: string) => void
@@ -60,6 +66,7 @@ interface Store {
   fetchIssues: () => Promise<void>
   submitSolve: (constraints: Constraints) => Promise<void>
   onSolverCompleted: () => void
+  materializeIssue: (issueNumber: number, repo?: string) => Promise<void>
 }
 
 const useStore = create<Store>((set, get) => ({
@@ -92,6 +99,10 @@ const useStore = create<Store>((set, get) => ({
   leftPanelTab: 'issues',
   leftPanelOpen: true,
   githubRepo: '',
+
+  materializing: false,
+  materializeResult: null,
+  materializeError: null,
 
   setZoomLevel: (z) => set({ zoomLevel: z }),
   setSolving: (s) => set({ solving: s }),
@@ -182,6 +193,31 @@ const useStore = create<Store>((set, get) => ({
     get().fetchGraph()
     get().fetchAssignments()
     get().fetchAgents()
+  },
+
+  materializeIssue: async (issueNumber, repo) => {
+    set({ materializing: true, materializeResult: null, materializeError: null })
+    try {
+      const res = await fetch(`${API}/api/materialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          issue_number: issueNumber,
+          repo: repo || get().githubRepo || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        set({ materializing: false, materializeError: data.error || 'Unknown error' })
+        return
+      }
+      set({ materializing: false, materializeResult: data })
+      // Refresh issues list since new ones were created
+      get().fetchIssues()
+    } catch (err) {
+      console.error('Failed to materialize:', err)
+      set({ materializing: false, materializeError: String(err) })
+    }
   },
 }))
 

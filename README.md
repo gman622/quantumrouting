@@ -26,47 +26,78 @@ See [docs/intent-ide-2030.md](docs/intent-ide-2030.md) for the full vision.
 # Backend (Flask + WebSocket)
 source .venv/bin/activate
 pip install -e .
-python -m src.intent_ide.app
+python -m intent_ide        # Flask backend on :5001
 
-# Frontend (React + React Flow + Bun) — in a separate terminal
+# Frontend (React + React Flow) — in a separate terminal
 cd frontend
-bun install
-bun dev  # dev server on :3000
+npm install
+npm run dev                 # Vite dev server on :5173
 ```
 
-Then open http://localhost:3000
+Then open http://localhost:5173
+
+### Staffing Engine CLI
+
+```bash
+# Slider bug demo (simulated execution)
+python -m quantum_routing.wave_executor
+
+# GitHub issues — current repo
+python -m quantum_routing.wave_executor --github --issue 13
+
+# Any GitHub repo
+python -m quantum_routing.wave_executor --repo facebook/react --issue 42
+
+# Create real companion issues on GitHub
+python -m quantum_routing.wave_executor --issue 13 --materialize
+```
 
 ## Project Structure
 
 ```
 src/
-├── intent_ide/           # Intent IDE web app
-│   ├── app.py            # Flask backend + WebSocket APIs
-│   ├── graph_data.py     # Intent graph → React Flow nodes/edges
-│   └── solver_worker.py  # Background CP-SAT solver with constraint updates
+├── intent_ide/              # Intent IDE web app
+│   ├── app.py               # Flask backend + WebSocket APIs + /api/materialize
+│   ├── graph_data.py        # Intent graph → React Flow nodes/edges
+│   └── solver_worker.py     # Background CP-SAT solver with constraint updates
 │
-├── quantum_routing/      # Solver backend (shared with notebooks)
-│   ├── css_renderer_config.py    # Hyperparameters, cost weights
-│   ├── css_renderer_agents.py    # Agent pool (300 agents)
-│   ├── css_renderer_intents.py   # Intent generation (10K tasks)
-│   ├── solve_10k_ortools.py      # CP-SAT solver
-│   ├── github_tickets.py         # GitHub issues integration
+├── quantum_routing/         # Solver backend (shared with notebooks)
+│   ├── css_renderer_config.py     # Hyperparameters, cost weights
+│   ├── css_renderer_agents.py     # Agent pool (300 agents)
+│   ├── css_renderer_intents.py    # Intent generation (10K tasks)
+│   ├── solve_10k_ortools.py       # CP-SAT solver
+│   ├── staffing_engine.py         # Profile assignment, wave scheduling, plan generation
+│   ├── quality_gates.py           # 3-gate validation (per-intent, per-wave, final)
+│   ├── wave_executor.py           # Wave-by-wave execution with retry/escalation
+│   ├── github_tickets.py          # GitHub issues → intent decomposition
+│   ├── github_backend.py          # Companion issue creation + progress reporting
+│   ├── feature_decomposer.py      # Built-in feature/bug decomposers
+│   ├── llm_decomposer.py          # Ollama-powered LLM decomposition
 │   └── telemetry.py               # Metrics computation
 │
-frontend/                 # React + TypeScript + Tailwind
+frontend/                    # React + TypeScript + Tailwind
 ├── src/
-│   ├── components/       # IntentCanvas, ConstraintPanel, WaveDiffPanel
-│   │   └── wave-diff/    # SemanticDiff, ConstraintHUD, ImpactHeatmap
-│   ├── store.ts          # Zustand state (constraints, assignments)
-│   └── types.ts          # Intent, Agent, Status, WaveData types
+│   ├── components/
+│   │   ├── IntentCanvas.tsx       # Zoomable DAG visualization
+│   │   ├── ConstraintPanel.tsx    # Quality/budget/overkill sliders
+│   │   ├── LeftPanel.tsx          # Tab container: Issues / Agents / Staff
+│   │   ├── StaffingPanel.tsx      # Materialize companion issues from UI
+│   │   ├── IssuesPanel.tsx        # GitHub issues list
+│   │   ├── ViolationsDashboard.tsx # Status counts + constraint health
+│   │   ├── WaveDiffPanel.tsx      # Mass diff review panel
+│   │   └── wave-diff/             # SemanticDiff, ConstraintHUD, ImpactHeatmap
+│   ├── store.ts             # Zustand state (constraints, assignments, materialize)
+│   └── types.ts             # Intent, Agent, Status, WaveData, MaterializeResult
 
-notebooks/                # Jupyter notebooks for exploration
-├── quantum-routing-10k.ipynb    # 10K intent simulation
+notebooks/                   # Jupyter notebooks for exploration
+├── quantum-routing-10k.ipynb      # 10K intent simulation
 
-docs/                     # Design documents
-├── intent-ide-2030.md    # Vision doc
-├── nextsteps.md          # Roadmap
-└── AGENT_PROFILES_WORKFLOWS.md  # Agent behavior specifications
+docs/                        # Design documents + API references
+├── staffing-engine-api.md         # Staffing engine API reference
+├── staffing-engine-guide.md       # Staffing engine usage guide
+├── intent-ide-2030.md             # Vision doc
+├── nextsteps.md                   # Roadmap
+└── AGENT_PROFILES_WORKFLOWS.md    # Agent behavior specifications
 ```
 
 ## Features
@@ -79,6 +110,19 @@ A 3-pane interface for mass diff review:
 - **Center: Semantic Diff** — Logic summary at 3 granularity levels (Intent → Architecture → Code)
 - **Right: Constraint HUD** — Before/after metrics comparison (latency, cost, coverage)
 - **Impact Heatmap** — Risk predictions for each changed file
+
+### Staffing Engine
+
+Point at any GitHub repo, decompose an issue into intents, and materialize 4 companion issues following the agent team pattern:
+
+- **Decompose** — Break a GitHub issue into atomic intents (LLM-powered or template-based)
+- **Staff** — Assign agent profiles (feature-trailblazer, bug-hunter, etc.) and schedule into parallel waves
+- **Materialize** — Create real companion issues on GitHub with labels, dependency links, and quality gate checklists
+- **Execute** — Wave-by-wave execution with 3-gate quality validation (per-intent, per-wave, final review)
+
+Available via CLI (`--materialize`), Flask endpoint (`POST /api/materialize`), or the **Staff** tab in the frontend.
+
+See [docs/staffing-engine-guide.md](docs/staffing-engine-guide.md) for full usage.
 
 ### GitHub Integration
 
@@ -134,4 +178,4 @@ Distributed across a 5-stage CSS Renderer pipeline (Parsing → Style → Layout
 - `numpy`, `matplotlib` — Data/visualization
 - `dwave-ocean-sdk` — Optional quantum annealing
 
-Python 3.13, Node 18+, Bun 1.0+.
+Python 3.13, Node 18+.

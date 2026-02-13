@@ -36,7 +36,14 @@ python -m quantum_routing.wave_executor
 
 # Run against live GitHub issues
 python -m quantum_routing.wave_executor --github
-python -m quantum_routing.wave_executor --github --issue 10
+python -m quantum_routing.wave_executor --github --issue 13
+
+# Target any GitHub repo
+python -m quantum_routing.wave_executor --repo facebook/react --issue 42
+
+# Create real companion issues on GitHub
+python -m quantum_routing.wave_executor --issue 13 --materialize
+python -m quantum_routing.wave_executor --repo owner/repo --issue 42 --materialize
 ```
 
 ## End-to-End Example
@@ -145,15 +152,53 @@ python -m quantum_routing.wave_executor
 
 **GitHub issues** (fetch, decompose, staff, execute):
 ```bash
-# All open issues
+# All open issues from current repo
 python -m quantum_routing.wave_executor --github
 
 # Single issue
-python -m quantum_routing.wave_executor --github --issue 10
+python -m quantum_routing.wave_executor --github --issue 13
 
 # Force template decomposition (skip LLM)
 python -m quantum_routing.wave_executor --github --template
+
+# Target any GitHub repo (--repo implies --github)
+python -m quantum_routing.wave_executor --repo facebook/react --issue 42
+
+# Create real companion issues on GitHub (--materialize)
+python -m quantum_routing.wave_executor --issue 13 --materialize
+python -m quantum_routing.wave_executor --repo owner/repo --issue 42 --materialize
 ```
+
+### Materializing Companion Issues
+
+The `--materialize` flag creates real GitHub issues following the 4-agent pattern:
+
+```
+Parent #20: Add caching to API layer
+  ├── #21 [Agent: feature-trailblazer] Add caching to API layer
+  ├── #22 [Agent: tenacious-unit-tester] Add caching to API layer
+  ├── #23 [Agent: docs-logs-wizard] Add caching to API layer
+  └── #24 [Agent: code-ace-reviewer] Add caching to API layer  (blocked by #21, #22, #23)
+```
+
+Each companion issue includes:
+- Assigned intents from the staffing plan
+- Quality gates checklist specific to the agent role
+- The reviewer issue links to the other 3 as dependencies
+
+A summary comment is posted on the parent issue with all companion links and staffing plan stats.
+
+### Frontend: Staffing Panel
+
+The Intent IDE frontend includes a **Staff** tab in the left panel:
+
+1. Enter a repository (optional — defaults to current repo)
+2. Enter an issue number
+3. Click **Staff It**
+4. The backend decomposes the issue, generates a staffing plan, and creates 4 companion issues
+5. Results display: companion issue links, plan stats (intents, waves, parallelism, cost), and profile load bars
+
+The endpoint is `POST /api/materialize` — see the API reference for details.
 
 ## Understanding the Output
 

@@ -18,6 +18,14 @@ python -m intent_ide        # Flask backend on :5001
 cd frontend && npm run dev  # React frontend on :5173 (or npm run build for production)
 ```
 
+**Staffing Engine (CLI)**:
+```bash
+python -m quantum_routing.wave_executor                                          # slider bug demo
+python -m quantum_routing.wave_executor --github --issue 13                      # single issue, current repo
+python -m quantum_routing.wave_executor --repo owner/name --issue 42             # any repo, simulated
+python -m quantum_routing.wave_executor --repo owner/name --issue 42 --materialize  # creates real companion issues
+```
+
 **Notebooks** (for exploration/research):
 ```bash
 source .venv/bin/activate
@@ -30,7 +38,7 @@ jupyter notebook notebooks/quantum-routing-10k.ipynb
 
 The web app is a Flask backend + React frontend:
 
-- **`app.py`** — Flask server with REST + WebSocket APIs. Initializes 10K intents and 300 agents on startup, runs initial CP-SAT solve, serves React build.
+- **`app.py`** — Flask server with REST + WebSocket APIs. Initializes 10K intents and 300 agents on startup, runs initial CP-SAT solve, serves React build. Includes `POST /api/materialize` for creating companion issues.
 - **`graph_data.py`** — Transforms intents/assignments into React Flow nodes and edges. Computes status (satisfied/overkill/violated) per intent.
 - **`solver_worker.py`** — Background thread that re-runs CP-SAT when constraints change. Emits progress via WebSocket.
 
@@ -44,16 +52,31 @@ Shared between Intent IDE and notebooks:
 - **`solve_10k_ortools.py`** — CP-SAT solver. Creates binary variables `x[i,j]` (intent i → agent j), minimizes cost subject to one-assignment and capacity constraints.
 - **`report_10k.py`** — Generates shift reports: total cost, $/story-point, agent utilization, overkill instances.
 
+### Staffing Engine (`src/quantum_routing/`)
+
+Decomposes GitHub issues into agent team execution plans:
+
+- **`staffing_engine.py`** — `assign_profile()` → `compute_waves()` → `generate_staffing_plan()`. Maps intents to 7 agent profiles, schedules into parallel waves via Kahn's algorithm.
+- **`quality_gates.py`** — 3-gate validation: `validate_intent()` → `validate_wave()` → `final_review()`. Profile-specific criteria, verdicts: SHIP_IT / REVISE / RETHINK.
+- **`wave_executor.py`** — Wave-by-wave execution with retry/escalation ladder. CLI entry point with `--github`, `--repo`, `--materialize` flags.
+- **`github_backend.py`** — Creates 4 companion issues per parent (feature-trailblazer, tenacious-unit-tester, docs-logs-wizard, code-ace-reviewer). Manages labels, posts progress comments.
+- **`github_tickets.py`** — Imports GitHub issues as Tickets, decomposes via templates or LLM.
+- **`feature_decomposer.py`** — Built-in decomposers for slider bug and real-time collab feature.
+- **`llm_decomposer.py`** — Ollama-powered LLM decomposition with template fallback.
+
 ### Frontend (`frontend/`)
 
 React + TypeScript + Tailwind + React Flow:
 
 - **`components/IntentCanvas.tsx`** — Zoomable DAG visualization with stage nodes, cluster nodes, and intent nodes
 - **`components/ConstraintPanel.tsx`** — Sliders for quality_floor, budget_cap, overkill_weight, etc.
-- **`components/AgentRoster.tsx`** — Agent list with utilization bars
+- **`components/LeftPanel.tsx`** — Tab container: Issues / Agents / Staff
+- **`components/StaffingPanel.tsx`** — Materialize companion issues: repo input, issue number, "Staff It" button, results with companion issue links
+- **`components/IssuesPanel.tsx`** — GitHub issues list
 - **`components/ViolationsDashboard.tsx`** — Status counts and constraint health
-- **`store.ts`** — Zustand store managing constraints, assignments, and WebSocket connection
-- **`types.ts`** — TypeScript types: `Intent`, `Agent`, `Status`, `Constraints`
+- **`components/WaveDiffPanel.tsx`** — Mass diff review panel
+- **`store.ts`** — Zustand store managing constraints, assignments, materialize state, and WebSocket connection
+- **`types.ts`** — TypeScript types: `Intent`, `Agent`, `Status`, `Constraints`, `MaterializeResult`
 
 ## Cost Model
 
@@ -71,6 +94,8 @@ where:
 
 ## Key Documentation
 
+- `docs/staffing-engine-api.md` — Staffing engine API reference (all modules, data structures, endpoints)
+- `docs/staffing-engine-guide.md` — End-to-end usage guide with examples
 - `docs/intent-ide-2030.md` — Vision doc: what software development looks like when code is exhaust
 - `docs/nextsteps.md` — Roadmap: scaling, D-Wave integration, Intenterator VS Code extension
 - `docs/quantum-agent-annealed-swarm.md` — Original QUBO formulation for D-Wave

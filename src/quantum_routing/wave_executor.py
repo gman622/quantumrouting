@@ -716,7 +716,12 @@ def _run_demo() -> None:
     _execute_and_report(plan)
 
 
-def _run_github(issue_number: Optional[int] = None, use_template: bool = False) -> None:
+def _run_github(
+    issue_number: Optional[int] = None,
+    use_template: bool = False,
+    repo: Optional[str] = None,
+    materialize: bool = False,
+) -> None:
     """Fetch GitHub issues, decompose, staff, execute."""
     from quantum_routing.github_tickets import (
         decompose_ticket,
@@ -731,17 +736,19 @@ def _run_github(issue_number: Optional[int] = None, use_template: bool = False) 
 
     print("=" * 72)
     print(f"  WAVE EXECUTOR -- GitHub Issues ({mode})")
+    if repo:
+        print(f"  Repo: {repo}")
     print("=" * 72)
 
     # Fetch tickets
     if issue_number is not None:
-        ticket = import_issue(issue_number)
+        ticket = import_issue(issue_number, repo=repo)
         if ticket is None:
             print(f"\n  Error: could not fetch issue #{issue_number}")
             return
         tickets = [ticket]
     else:
-        tickets = import_all_issues(state="open")
+        tickets = import_all_issues(state="open", repo=repo)
         if not tickets:
             print("\n  No open issues found (or gh CLI not configured)")
             return
@@ -763,20 +770,54 @@ def _run_github(issue_number: Optional[int] = None, use_template: bool = False) 
 
     print(f"\n  Total: {len(all_intents)} intents from {len(tickets)} issues")
 
-    # Staff and execute
+    # Staff
     plan = generate_staffing_plan(all_intents)
     print(f"  Staffing plan: {plan['total_waves']} waves, "
           f"peak parallelism {plan['peak_parallelism']}, "
           f"est. cost ${plan['total_estimated_cost']:.4f}")
 
-    _execute_and_report(plan)
+    # Materialize companion issues on GitHub
+    if materialize and issue_number is not None:
+        from quantum_routing.github_backend import (
+            GitHubProgressReporter,
+            create_companion_issues,
+            ensure_agent_labels,
+        )
+
+        print(f"\n  Materializing companion issues...")
+        label_results = ensure_agent_labels(repo=repo)
+        print(f"  Labels: {sum(label_results.values())}/{len(label_results)} created")
+
+        parent_title = tickets[0].title
+        created = create_companion_issues(
+            parent_issue_number=issue_number,
+            parent_title=parent_title,
+            staffing_plan=plan,
+            repo=repo,
+        )
+        for agent, num in created.items():
+            print(f"  Created #{num} [{agent}]")
+
+        # Chain progress reporters: CLI + GitHub
+        gh_reporter = GitHubProgressReporter(issue_number, repo=repo)
+
+        def _combined_progress(event: str, data: Dict[str, Any]) -> None:
+            _cli_progress(event, data)
+            gh_reporter(event, data)
+
+        _execute_and_report(plan, progress_callback=_combined_progress)
+    else:
+        _execute_and_report(plan)
 
 
-def _execute_and_report(plan: Dict[str, Any]) -> None:
+def _execute_and_report(
+    plan: Dict[str, Any],
+    progress_callback: Optional[ProgressCallback] = None,
+) -> None:
     """Shared execution + reporting logic."""
     executor = WaveExecutor(
         backend=SimulatedBackend(failure_rate=0.15, seed=42),
-        progress_callback=_cli_progress,
+        progress_callback=progress_callback or _cli_progress,
     )
     result = executor.execute_plan(plan)
 
@@ -842,9 +883,22 @@ if __name__ == "__main__":
         "--template", action="store_true",
         help="Force template-only decomposition, skip LLM (with --github)",
     )
+    parser.add_argument(
+        "--repo", type=str, default=None, metavar="OWNER/REPO",
+        help="Target a specific GitHub repo (implies --github)",
+    )
+    parser.add_argument(
+        "--materialize", action="store_true",
+        help="Create real companion issues on GitHub (requires --issue)",
+    )
     args = parser.parse_args()
 
-    if args.github or args.issue is not None:
-        _run_github(issue_number=args.issue, use_template=args.template)
+    if args.repo or args.github or args.issue is not None:
+        _run_github(
+            issue_number=args.issue,
+            use_template=args.template,
+            repo=args.repo,
+            materialize=args.materialize,
+        )
     else:
         _run_demo()

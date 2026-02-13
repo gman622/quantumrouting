@@ -1,6 +1,7 @@
 import useStore from '../store'
 import IssuesPanel from './IssuesPanel'
 import AgentDispatch from './AgentDispatch'
+import StaffingPanel from './StaffingPanel'
 
 export default function LeftPanel() {
   const leftPanelTab = useStore((s) => s.leftPanelTab)
@@ -54,13 +55,25 @@ export default function LeftPanel() {
                 <span className="ml-1 text-[10px] text-slate-500">({agentSummary.length})</span>
               )}
             </button>
+            <button
+              onClick={() => setLeftPanelTab('staffing')}
+              className={`flex-1 py-2 text-xs font-medium transition-colors ${
+                leftPanelTab === 'staffing'
+                  ? 'text-indigo-400 border-b-2 border-indigo-400'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Staff
+            </button>
           </div>
 
           {/* Content */}
           {leftPanelTab === 'issues' ? (
             <IssuesPanel />
-          ) : (
+          ) : leftPanelTab === 'agents' ? (
             <AgentsList />
+          ) : (
+            <StaffingPanel />
           )}
         </>
       )}

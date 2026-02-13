@@ -19,7 +19,17 @@ from quantum_routing.css_renderer_agents import build_agent_pool, get_agent_stat
 from quantum_routing.css_renderer_intents import generate_intents, build_workflow_chains
 from quantum_routing.solve_10k_ortools import solve_cpsat
 from quantum_routing.telemetry import compute_metrics
-from quantum_routing.github_tickets import import_all_issues, decompose_ticket
+from quantum_routing.github_tickets import (
+    import_all_issues,
+    import_issue,
+    decompose_ticket,
+    decompose_ticket_smart,
+)
+from quantum_routing.staffing_engine import generate_staffing_plan
+from quantum_routing.github_backend import (
+    ensure_agent_labels,
+    create_companion_issues,
+)
 from quantum_routing.feature_decomposer import (
     decompose_realtime_collab_feature,
     decompose_slider_bug,
@@ -226,6 +236,78 @@ def api_issues():
             })
 
     return jsonify({'issues': issues_data, 'total': len(issues_data)})
+
+
+@app.route('/api/materialize', methods=['POST'])
+def api_materialize():
+    """Materialize companion issues for a GitHub issue.
+
+    POST body: { "repo": "owner/repo" (optional), "issue_number": 13 }
+
+    Decompose → staff → create 4 companion issues on GitHub.
+    """
+    data = request.get_json() or {}
+    issue_number = data.get('issue_number')
+    repo = data.get('repo') or None
+
+    if not issue_number:
+        return jsonify({'error': 'issue_number is required'}), 400
+
+    try:
+        issue_number = int(issue_number)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'issue_number must be an integer'}), 400
+
+    # Fetch the issue
+    ticket = import_issue(issue_number, repo=repo)
+    if ticket is None:
+        return jsonify({'error': f'Could not fetch issue #{issue_number}'}), 404
+
+    # Decompose into intents
+    intent_specs = decompose_ticket_smart(ticket)
+    if not intent_specs:
+        return jsonify({'error': 'No intents generated from issue'}), 422
+
+    # Generate staffing plan
+    plan = generate_staffing_plan(intent_specs)
+
+    # Ensure labels exist
+    label_results = ensure_agent_labels(repo=repo)
+
+    # Create companion issues
+    created = create_companion_issues(
+        parent_issue_number=issue_number,
+        parent_title=ticket.title,
+        staffing_plan=plan,
+        repo=repo,
+    )
+
+    # Emit WebSocket event so frontend can update
+    socketio.emit('materialize_completed', {
+        'parent_issue': issue_number,
+        'companion_issues': created,
+        'staffing_plan': {
+            'total_intents': plan['total_intents'],
+            'total_waves': plan['total_waves'],
+            'peak_parallelism': plan['peak_parallelism'],
+            'total_estimated_cost': plan['total_estimated_cost'],
+            'profile_load': plan['profile_load'],
+        },
+    })
+
+    return jsonify({
+        'parent_issue': issue_number,
+        'parent_title': ticket.title,
+        'companion_issues': created,
+        'labels_created': sum(label_results.values()),
+        'staffing_plan': {
+            'total_intents': plan['total_intents'],
+            'total_waves': plan['total_waves'],
+            'peak_parallelism': plan['peak_parallelism'],
+            'total_estimated_cost': plan['total_estimated_cost'],
+            'profile_load': plan['profile_load'],
+        },
+    })
 
 
 # ── WebSocket events ─────────────────────────────────────────────────────

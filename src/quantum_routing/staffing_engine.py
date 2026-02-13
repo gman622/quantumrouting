@@ -490,6 +490,7 @@ def generate_staffing_plan(intents: Sequence[Any]) -> Dict[str, Any]:
                 "estimated_tokens": tokens,
                 "estimated_cost": round(cost, 4),
                 "depends_on": _get_deps(intent),
+                "wave": i,
             })
 
         wave_plans.append({

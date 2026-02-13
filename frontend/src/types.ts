@@ -238,3 +238,26 @@ export interface IssuesResponse {
   issues: Issue[]
   total: number
 }
+
+// ── Staffing / Materialize ────────────────────────────────────────────
+
+export interface MaterializeRequest {
+  repo?: string
+  issue_number: number
+}
+
+export interface StaffingPlanSummary {
+  total_intents: number
+  total_waves: number
+  peak_parallelism: number
+  total_estimated_cost: number
+  profile_load: Record<string, number>
+}
+
+export interface MaterializeResult {
+  parent_issue: number
+  parent_title: string
+  companion_issues: Record<string, number>
+  labels_created: number
+  staffing_plan: StaffingPlanSummary
+}
