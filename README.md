@@ -26,7 +26,7 @@ See [docs/intent-ide-2030.md](docs/intent-ide-2030.md) for the full vision.
 # Backend (Flask + WebSocket)
 source .venv/bin/activate
 pip install -e .
-python -m intent_ide        # Flask backend on :5001
+PYTHONPATH=src python -m intent_ide  # Flask backend on :5001
 
 # Frontend (React + React Flow) — in a separate terminal
 cd frontend

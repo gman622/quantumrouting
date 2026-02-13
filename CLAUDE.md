@@ -14,7 +14,7 @@ The core optimization problem: given N intents and M agents with different costs
 ```bash
 source .venv/bin/activate
 pip install -e .
-python -m intent_ide        # Flask backend on :5001
+PYTHONPATH=src python -m intent_ide  # Flask backend on :5001
 cd frontend && npm run dev  # React frontend on :5173 (or npm run build for production)
 ```
 
