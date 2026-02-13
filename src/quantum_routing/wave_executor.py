@@ -696,6 +696,34 @@ def _cli_progress(event: str, data: Dict[str, Any]) -> None:
               f"Human review: {data['human_review']}")
 
 
+def _print_plan_summary(plan: Dict[str, Any]) -> None:
+    """Print a detailed staffing plan summary for --plan-only mode."""
+    print(f"\n{'='*72}")
+    print("  STAFFING PLAN (preview — no execution)")
+    print(f"{'='*72}")
+    print(f"  Intents:     {plan['total_intents']}")
+    print(f"  Waves:       {plan['total_waves']}")
+    print(f"  Parallelism: {plan['peak_parallelism']}")
+    print(f"  Est. cost:   ${plan['total_estimated_cost']:.4f}")
+
+    # Profile load
+    print(f"\n  Profile Load:")
+    for profile, count in sorted(plan.get('profile_load', {}).items()):
+        print(f"    {profile:<28s} {count}")
+
+    # Wave breakdown
+    for wave_plan in plan.get('waves', []):
+        wave_idx = wave_plan['wave']
+        wave_cost = sum(i.get('estimated_cost', 0) for i in wave_plan['intents'])
+        print(f"\n  Wave {wave_idx} ({wave_plan['agents_needed']} agents, ${wave_cost:.4f})")
+        for intent in wave_plan['intents']:
+            print(f"    {intent['id']:<36s} -> {intent['profile']} "
+                  f"({intent['model']}) [{intent['complexity']}]")
+
+    print(f"\n  Run with --materialize to create companion issues on GitHub.")
+    print(f"{'='*72}")
+
+
 def _run_demo() -> None:
     """Original slider-bug demo (default when no args)."""
     from quantum_routing.feature_decomposer import decompose_slider_bug
@@ -721,6 +749,7 @@ def _run_github(
     use_template: bool = False,
     repo: Optional[str] = None,
     materialize: bool = False,
+    plan_only: bool = False,
 ) -> None:
     """Fetch GitHub issues, decompose, staff, execute."""
     from quantum_routing.github_tickets import (
@@ -775,6 +804,11 @@ def _run_github(
     print(f"  Staffing plan: {plan['total_waves']} waves, "
           f"peak parallelism {plan['peak_parallelism']}, "
           f"est. cost ${plan['total_estimated_cost']:.4f}")
+
+    # Plan-only: show detailed plan and exit
+    if plan_only:
+        _print_plan_summary(plan)
+        return
 
     # Materialize companion issues on GitHub
     if materialize and issue_number is not None:
@@ -891,6 +925,10 @@ if __name__ == "__main__":
         "--materialize", action="store_true",
         help="Create real companion issues on GitHub (requires --issue)",
     )
+    parser.add_argument(
+        "--plan-only", action="store_true",
+        help="Show staffing plan without executing or materializing",
+    )
     args = parser.parse_args()
 
     if args.repo or args.github or args.issue is not None:
@@ -899,6 +937,7 @@ if __name__ == "__main__":
             use_template=args.template,
             repo=args.repo,
             materialize=args.materialize,
+            plan_only=args.plan_only,
         )
     else:
         _run_demo()

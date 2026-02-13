@@ -9,6 +9,7 @@ import type {
   IntentDetail,
   Issue,
   MaterializeResult,
+  StaffPlanResponse,
 } from './types'
 
 const API = ''  // proxy via vite dev server; empty string = same origin
@@ -44,6 +45,11 @@ interface Store {
   leftPanelOpen: boolean
   githubRepo: string
 
+  // Staffing plan (preview)
+  staffingPlan: StaffPlanResponse | null
+  planLoading: boolean
+  planError: string | null
+
   // Staffing / Materialize
   materializing: boolean
   materializeResult: MaterializeResult | null
@@ -66,6 +72,8 @@ interface Store {
   fetchIssues: () => Promise<void>
   submitSolve: (constraints: Constraints) => Promise<void>
   onSolverCompleted: () => void
+  generatePlan: (issueNumber: number, repo?: string) => Promise<void>
+  clearPlan: () => void
   materializeIssue: (issueNumber: number, repo?: string) => Promise<void>
 }
 
@@ -99,6 +107,10 @@ const useStore = create<Store>((set, get) => ({
   leftPanelTab: 'issues',
   leftPanelOpen: true,
   githubRepo: '',
+
+  staffingPlan: null,
+  planLoading: false,
+  planError: null,
 
   materializing: false,
   materializeResult: null,
@@ -195,16 +207,50 @@ const useStore = create<Store>((set, get) => ({
     get().fetchAgents()
   },
 
-  materializeIssue: async (issueNumber, repo) => {
-    set({ materializing: true, materializeResult: null, materializeError: null })
+  generatePlan: async (issueNumber, repo) => {
+    set({ planLoading: true, staffingPlan: null, planError: null, materializeResult: null, materializeError: null })
     try {
-      const res = await fetch(`${API}/api/materialize`, {
+      const res = await fetch(`${API}/api/staff`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           issue_number: issueNumber,
           repo: repo || get().githubRepo || undefined,
         }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        set({ planLoading: false, planError: data.error || 'Unknown error' })
+        return
+      }
+      set({ planLoading: false, staffingPlan: data })
+    } catch (err) {
+      console.error('Failed to generate plan:', err)
+      set({ planLoading: false, planError: String(err) })
+    }
+  },
+
+  clearPlan: () => {
+    set({ staffingPlan: null, planError: null, materializeResult: null, materializeError: null })
+  },
+
+  materializeIssue: async (issueNumber, repo) => {
+    set({ materializing: true, materializeResult: null, materializeError: null })
+    try {
+      const plan = get().staffingPlan
+      const body: Record<string, unknown> = {
+        issue_number: issueNumber,
+        repo: repo || get().githubRepo || undefined,
+      }
+      // If we have a pre-computed plan, pass it through to skip re-decomposition
+      if (plan) {
+        body.staffing_plan = plan.staffing_plan
+        body.parent_title = plan.parent_title
+      }
+      const res = await fetch(`${API}/api/materialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) {

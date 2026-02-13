@@ -261,3 +261,30 @@ export interface MaterializeResult {
   labels_created: number
   staffing_plan: StaffingPlanSummary
 }
+
+// ── Staff Plan (preview before materialize) ─────────────────────────
+
+export interface StaffPlanIntent {
+  id: string
+  profile: string
+  model: string
+  complexity: string
+  estimated_tokens: number
+  estimated_cost: number
+  wave: number
+}
+
+export interface StaffPlanWave {
+  wave: number
+  agents_needed: number
+  estimated_cost: number
+  intents: StaffPlanIntent[]
+}
+
+export interface StaffPlanResponse {
+  parent_issue: number
+  parent_title: string
+  staffing_plan: StaffingPlanSummary & {
+    waves: StaffPlanWave[]
+  }
+}

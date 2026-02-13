@@ -1,7 +1,11 @@
-"""Tests for quantum_routing.github_backend -- companion issue creation."""
+"""Tests for quantum_routing.github_backend -- companion issue creation.
+
+Also tests the /api/staff and /api/materialize endpoints from intent_ide.app.
+"""
 
 from unittest.mock import patch, MagicMock
 import subprocess
+import json
 
 import pytest
 
@@ -450,3 +454,146 @@ class TestGitHubProgressReporter:
         # Third positional arg or keyword
         call_args = mock_comment.call_args
         assert call_args[0][2] == "ext/repo" or call_args[1].get("repo") == "ext/repo"
+
+
+# ---------------------------------------------------------------------------
+# /api/staff and /api/materialize endpoint tests
+# ---------------------------------------------------------------------------
+
+def _make_mock_ticket(id_="13", title="Wire telemetry into ViolationsDashboard"):
+    """Create a mock Ticket for endpoint tests."""
+    ticket = MagicMock()
+    ticket.id = id_
+    ticket.title = title
+    ticket.body = "Some body text"
+    ticket.labels = ["enhancement"]
+    ticket.url = f"https://github.com/owner/repo/issues/{id_}"
+    ticket.ticket_type = MagicMock()
+    ticket.ticket_type.name = "FEATURE"
+    return ticket
+
+
+class TestApiStaffEndpoint:
+    """Tests for POST /api/staff — plan-only endpoint."""
+
+    @patch("intent_ide.app.generate_staffing_plan")
+    @patch("intent_ide.app.decompose_ticket_smart")
+    @patch("intent_ide.app.import_issue")
+    def test_returns_staffing_plan(self, mock_import, mock_decompose, mock_staff):
+        """Should return full staffing plan without creating issues."""
+        # Import app inside test to avoid heavy module-level init
+        from intent_ide.app import app
+
+        mock_import.return_value = _make_mock_ticket()
+        mock_decompose.return_value = [
+            {"id": "t-1", "profile": "feature-trailblazer"},
+        ]
+        mock_staff.return_value = _make_staffing_plan()
+
+        with app.test_client() as client:
+            res = client.post('/api/staff', json={"issue_number": 13})
+            data = res.get_json()
+
+        assert res.status_code == 200
+        assert data["parent_issue"] == 13
+        assert data["parent_title"] == "Wire telemetry into ViolationsDashboard"
+        assert "staffing_plan" in data
+        assert data["staffing_plan"]["total_intents"] == 4
+        assert "waves" in data["staffing_plan"]
+
+    @patch("intent_ide.app.import_issue")
+    def test_missing_issue_number(self, mock_import):
+        from intent_ide.app import app
+
+        with app.test_client() as client:
+            res = client.post('/api/staff', json={})
+
+        assert res.status_code == 400
+        assert "issue_number" in res.get_json()["error"]
+
+    @patch("intent_ide.app.import_issue")
+    def test_invalid_issue_number(self, mock_import):
+        from intent_ide.app import app
+
+        with app.test_client() as client:
+            res = client.post('/api/staff', json={"issue_number": "abc"})
+
+        assert res.status_code == 400
+        assert "integer" in res.get_json()["error"]
+
+    @patch("intent_ide.app.import_issue")
+    def test_issue_not_found(self, mock_import):
+        from intent_ide.app import app
+        mock_import.return_value = None
+
+        with app.test_client() as client:
+            res = client.post('/api/staff', json={"issue_number": 999})
+
+        assert res.status_code == 404
+
+    @patch("intent_ide.app.decompose_ticket_smart")
+    @patch("intent_ide.app.import_issue")
+    def test_no_intents(self, mock_import, mock_decompose):
+        from intent_ide.app import app
+        mock_import.return_value = _make_mock_ticket()
+        mock_decompose.return_value = []
+
+        with app.test_client() as client:
+            res = client.post('/api/staff', json={"issue_number": 13})
+
+        assert res.status_code == 422
+
+
+class TestApiMaterializeWithPlan:
+    """Tests for POST /api/materialize with pre-computed plan."""
+
+    @patch("intent_ide.app.create_companion_issues")
+    @patch("intent_ide.app.ensure_agent_labels")
+    def test_accepts_pre_computed_plan(self, mock_labels, mock_create):
+        """When staffing_plan and parent_title are provided, skip decompose."""
+        from intent_ide.app import app
+
+        mock_labels.return_value = {"feature-trailblazer": True}
+        mock_create.return_value = {
+            "feature-trailblazer": 21,
+            "tenacious-unit-tester": 22,
+            "docs-logs-wizard": 23,
+            "code-ace-reviewer": 24,
+        }
+        plan = _make_staffing_plan()
+
+        with app.test_client() as client:
+            res = client.post('/api/materialize', json={
+                "issue_number": 13,
+                "staffing_plan": plan,
+                "parent_title": "Wire telemetry",
+            })
+            data = res.get_json()
+
+        assert res.status_code == 200
+        assert data["parent_title"] == "Wire telemetry"
+        assert len(data["companion_issues"]) == 4
+
+    @patch("intent_ide.app.generate_staffing_plan")
+    @patch("intent_ide.app.decompose_ticket_smart")
+    @patch("intent_ide.app.import_issue")
+    @patch("intent_ide.app.create_companion_issues")
+    @patch("intent_ide.app.ensure_agent_labels")
+    def test_falls_back_to_full_pipeline(self, mock_labels, mock_create,
+                                          mock_import, mock_decompose, mock_staff):
+        """Without staffing_plan, does full decompose+staff pipeline."""
+        from intent_ide.app import app
+
+        mock_labels.return_value = {"feature-trailblazer": True}
+        mock_create.return_value = {"feature-trailblazer": 21}
+        mock_import.return_value = _make_mock_ticket()
+        mock_decompose.return_value = [{"id": "t-1"}]
+        mock_staff.return_value = _make_staffing_plan()
+
+        with app.test_client() as client:
+            res = client.post('/api/materialize', json={"issue_number": 13})
+
+        assert res.status_code == 200
+        mock_import.assert_called_once()
+        mock_decompose.assert_called_once()
+        mock_staff.assert_called_once()

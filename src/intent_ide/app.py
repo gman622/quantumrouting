@@ -238,13 +238,12 @@ def api_issues():
     return jsonify({'issues': issues_data, 'total': len(issues_data)})
 
 
-@app.route('/api/materialize', methods=['POST'])
-def api_materialize():
-    """Materialize companion issues for a GitHub issue.
+@app.route('/api/staff', methods=['POST'])
+def api_staff():
+    """Generate a staffing plan without creating GitHub issues.
 
     POST body: { "repo": "owner/repo" (optional), "issue_number": 13 }
-
-    Decompose → staff → create 4 companion issues on GitHub.
+    Returns the full staffing plan for review.
     """
     data = request.get_json() or {}
     issue_number = data.get('issue_number')
@@ -271,13 +270,61 @@ def api_materialize():
     # Generate staffing plan
     plan = generate_staffing_plan(intent_specs)
 
+    return jsonify({
+        'parent_issue': issue_number,
+        'parent_title': ticket.title,
+        'staffing_plan': plan,
+    })
+
+
+@app.route('/api/materialize', methods=['POST'])
+def api_materialize():
+    """Materialize companion issues for a GitHub issue.
+
+    POST body: { "repo": "owner/repo" (optional), "issue_number": 13,
+                 "staffing_plan": {...} (optional), "parent_title": "..." (optional) }
+
+    If staffing_plan and parent_title are provided, skips decompose+staff and
+    goes straight to creating issues. Otherwise does the full pipeline.
+    """
+    data = request.get_json() or {}
+    issue_number = data.get('issue_number')
+    repo = data.get('repo') or None
+    pre_plan = data.get('staffing_plan')
+    pre_title = data.get('parent_title')
+
+    if not issue_number:
+        return jsonify({'error': 'issue_number is required'}), 400
+
+    try:
+        issue_number = int(issue_number)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'issue_number must be an integer'}), 400
+
+    if pre_plan and pre_title:
+        # Use the pre-computed plan from /api/staff
+        plan = pre_plan
+        title = pre_title
+    else:
+        # Full pipeline: fetch → decompose → staff
+        ticket = import_issue(issue_number, repo=repo)
+        if ticket is None:
+            return jsonify({'error': f'Could not fetch issue #{issue_number}'}), 404
+
+        intent_specs = decompose_ticket_smart(ticket)
+        if not intent_specs:
+            return jsonify({'error': 'No intents generated from issue'}), 422
+
+        plan = generate_staffing_plan(intent_specs)
+        title = ticket.title
+
     # Ensure labels exist
     label_results = ensure_agent_labels(repo=repo)
 
     # Create companion issues
     created = create_companion_issues(
         parent_issue_number=issue_number,
-        parent_title=ticket.title,
+        parent_title=title,
         staffing_plan=plan,
         repo=repo,
     )
@@ -297,7 +344,7 @@ def api_materialize():
 
     return jsonify({
         'parent_issue': issue_number,
-        'parent_title': ticket.title,
+        'parent_title': title,
         'companion_issues': created,
         'labels_created': sum(label_results.values()),
         'staffing_plan': {
